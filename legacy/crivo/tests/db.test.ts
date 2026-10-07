@@ -127,4 +127,16 @@ describe("migração", () => {
     expect(lerFeed(b).comandos).toHaveLength(1);
     b.close();
   });
+
+  it("banco de versão mais nova que este código: recusa abrir em vez de apagar dados reais", () => {
+    const caminho = arquivoTemporario();
+    const a = abrirBanco(caminho);
+    inserirPrompt(a, novoPrompt());
+    a.pragma(`user_version = ${VERSAO_ESQUEMA + 1}`);
+    a.close();
+    expect(() => abrirBanco(caminho)).toThrow(/versão/);
+    const b = new Database(caminho);
+    expect((b.prepare("SELECT COUNT(*) AS n FROM prompts").get() as { n: number }).n).toBe(1);
+    b.close();
+  });
 });

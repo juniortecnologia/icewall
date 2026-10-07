@@ -168,15 +168,17 @@ export function lerFeed(db: Banco, limite = 50): FeedDoBanco {
   return { prompts: prompts.map(paraPrompt), comandos: comandos.map(paraComando), placar: lerPlacar(db) };
 }
 
-/** Banco de versão antiga só tem dados de mentira: recria as tabelas, uma vez. */
+/**
+ * Passos explícitos por versão. Só o passo da v1 apaga tabelas, porque a v1 tinha apenas
+ * dados de mentira. Uma v3 futura precisa de um passo próprio que preserve os dados (ALTER).
+ */
 function migrar(db: Banco) {
   const versao = db.pragma("user_version", { simple: true }) as number;
-  if (versao >= VERSAO_ESQUEMA) {
-    db.exec(ESQUEMA);
-    return;
+  if (versao > VERSAO_ESQUEMA) {
+    throw new Error(`Banco na versão ${versao}, mais nova que a deste Crivo (${VERSAO_ESQUEMA}). Atualize o Crivo.`);
   }
   db.transaction(() => {
-    db.exec("DROP TABLE IF EXISTS prompts; DROP TABLE IF EXISTS comandos;");
+    if (versao < 2) db.exec("DROP TABLE IF EXISTS prompts; DROP TABLE IF EXISTS comandos;");
     db.exec(ESQUEMA);
     db.pragma(`user_version = ${VERSAO_ESQUEMA}`);
   })();
