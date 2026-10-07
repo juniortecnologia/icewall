@@ -36,7 +36,7 @@ export function ItemPrompt({ prompt, novo }: { prompt: Prompt; novo: boolean }) 
         <SemaforoEntrada semaforo={prompt.semaforo} />
         <span className="min-w-0 flex-1">
           <span
-            className={`block font-mono text-sm leading-relaxed [overflow-wrap:anywhere] ${aberto ? "" : "line-clamp-2"}`}
+            className={`font-mono text-sm leading-relaxed [overflow-wrap:anywhere] ${aberto ? "block" : "line-clamp-2"}`}
           >
             {prompt.texto}
           </span>

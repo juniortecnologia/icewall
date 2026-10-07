@@ -10,7 +10,7 @@ export function ItemComando({ comando, novo }: { comando: Comando; novo: boolean
 
   return (
     <li
-      className={`flex items-start gap-3 rounded-md border bg-painel p-3 ${
+      className={`relative flex items-start gap-3 rounded-md border bg-painel p-3 ${
         segurado ? "border-vermelho/40" : "border-borda"
       } ${novo ? "animate-entrada" : ""}`}
     >
