@@ -1,11 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { calcularNota, semaforoDaNota, semaforoDoComando } from "./avaliacao";
-import { exemplosComandos, exemplosPrompts } from "./exemplos";
+import { semaforoDoComando, semaforoDoPrompt } from "./avaliacao";
 import type {
   Comando,
-  Feed,
+  FeedDoBanco,
   NovoComando,
   NovoPrompt,
   Placar,
@@ -18,23 +17,31 @@ import type {
 
 export type Banco = Database.Database;
 
+/** v1 = etapa 1 (dados de mentira); v2 = dados reais vindos dos hooks. */
+export const VERSAO_ESQUEMA = 2;
+
+// CHECK com valor nulo passa: nota e critérios ficam vazios até a IA existir.
 const ESQUEMA = `
 CREATE TABLE IF NOT EXISTS prompts (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   texto        TEXT    NOT NULL,
   criado_em    TEXT    NOT NULL,
-  tamanho      TEXT    NOT NULL CHECK (tamanho IN ('ajuste', 'funcionalidade', 'sistema')),
-  tamanho_pct  INTEGER NOT NULL CHECK (tamanho_pct  BETWEEN 0 AND 100),
-  objetivo_pct INTEGER NOT NULL CHECK (objetivo_pct BETWEEN 0 AND 100),
-  onde_pct     INTEGER NOT NULL CHECK (onde_pct     BETWEEN 0 AND 100),
-  pronto_pct   INTEGER NOT NULL CHECK (pronto_pct   BETWEEN 0 AND 100),
-  foco_pct     INTEGER NOT NULL CHECK (foco_pct     BETWEEN 0 AND 100),
-  nota         INTEGER NOT NULL CHECK (nota         BETWEEN 0 AND 100),
+  origem       TEXT    NOT NULL,
+  sessao       TEXT,
+  tamanho      TEXT    CHECK (tamanho IN ('ajuste', 'funcionalidade', 'sistema')),
+  tamanho_pct  INTEGER CHECK (tamanho_pct  BETWEEN 0 AND 100),
+  objetivo_pct INTEGER CHECK (objetivo_pct BETWEEN 0 AND 100),
+  onde_pct     INTEGER CHECK (onde_pct     BETWEEN 0 AND 100),
+  pronto_pct   INTEGER CHECK (pronto_pct   BETWEEN 0 AND 100),
+  foco_pct     INTEGER CHECK (foco_pct     BETWEEN 0 AND 100),
+  nota         INTEGER CHECK (nota         BETWEEN 0 AND 100),
   semaforo     TEXT    NOT NULL CHECK (semaforo IN ('verde', 'amarelo', 'vermelho'))
 );
 CREATE TABLE IF NOT EXISTS comandos (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   criado_em TEXT NOT NULL,
+  origem    TEXT NOT NULL,
+  sessao    TEXT,
   tipo      TEXT NOT NULL CHECK (tipo IN ('comando', 'arquivo')),
   alvo      TEXT NOT NULL,
   regra     TEXT,
@@ -48,19 +55,23 @@ interface LinhaPrompt {
   id: number;
   texto: string;
   criado_em: string;
-  tamanho: Tamanho;
-  tamanho_pct: number;
-  objetivo_pct: number;
-  onde_pct: number;
-  pronto_pct: number;
-  foco_pct: number;
-  nota: number;
+  origem: string;
+  sessao: string | null;
+  tamanho: Tamanho | null;
+  tamanho_pct: number | null;
+  objetivo_pct: number | null;
+  onde_pct: number | null;
+  pronto_pct: number | null;
+  foco_pct: number | null;
+  nota: number | null;
   semaforo: Semaforo;
 }
 
 interface LinhaComando {
   id: number;
   criado_em: string;
+  origem: string;
+  sessao: string | null;
   tipo: TipoAlvo;
   alvo: string;
   regra: string | null;
@@ -71,14 +82,19 @@ const paraPrompt = (l: LinhaPrompt): Prompt => ({
   id: l.id,
   texto: l.texto,
   criadoEm: l.criado_em,
-  criterios: {
-    tamanho: l.tamanho,
-    tamanhoPct: l.tamanho_pct,
-    objetivoPct: l.objetivo_pct,
-    ondePct: l.onde_pct,
-    prontoPct: l.pronto_pct,
-    focoPct: l.foco_pct,
-  },
+  origem: l.origem,
+  sessao: l.sessao,
+  criterios:
+    l.tamanho === null
+      ? null
+      : {
+          tamanho: l.tamanho,
+          tamanhoPct: l.tamanho_pct ?? 0,
+          objetivoPct: l.objetivo_pct ?? 0,
+          ondePct: l.onde_pct ?? 0,
+          prontoPct: l.pronto_pct ?? 0,
+          focoPct: l.foco_pct ?? 0,
+        },
   nota: l.nota,
   semaforo: l.semaforo,
 });
@@ -86,6 +102,8 @@ const paraPrompt = (l: LinhaPrompt): Prompt => ({
 const paraComando = (l: LinhaComando): Comando => ({
   id: l.id,
   criadoEm: l.criado_em,
+  origem: l.origem,
+  sessao: l.sessao,
   tipo: l.tipo,
   alvo: l.alvo,
   regra: l.regra,
@@ -93,13 +111,27 @@ const paraComando = (l: LinhaComando): Comando => ({
 });
 
 export function inserirPrompt(db: Banco, p: NovoPrompt): Prompt {
-  const semaforo = semaforoDaNota(p.nota);
+  const semaforo = semaforoDoPrompt(p.nota);
+  const c = p.criterios;
   const r = db
     .prepare(
-      `INSERT INTO prompts (texto, criado_em, tamanho, tamanho_pct, objetivo_pct, onde_pct, pronto_pct, foco_pct, nota, semaforo)
-       VALUES (@texto, @criadoEm, @tamanho, @tamanhoPct, @objetivoPct, @ondePct, @prontoPct, @focoPct, @nota, @semaforo)`,
+      `INSERT INTO prompts (texto, criado_em, origem, sessao, tamanho, tamanho_pct, objetivo_pct, onde_pct, pronto_pct, foco_pct, nota, semaforo)
+       VALUES (@texto, @criadoEm, @origem, @sessao, @tamanho, @tamanhoPct, @objetivoPct, @ondePct, @prontoPct, @focoPct, @nota, @semaforo)`,
     )
-    .run({ texto: p.texto, criadoEm: p.criadoEm, ...p.criterios, nota: p.nota, semaforo });
+    .run({
+      texto: p.texto,
+      criadoEm: p.criadoEm,
+      origem: p.origem,
+      sessao: p.sessao,
+      tamanho: c?.tamanho ?? null,
+      tamanhoPct: c?.tamanhoPct ?? null,
+      objetivoPct: c?.objetivoPct ?? null,
+      ondePct: c?.ondePct ?? null,
+      prontoPct: c?.prontoPct ?? null,
+      focoPct: c?.focoPct ?? null,
+      nota: p.nota,
+      semaforo,
+    });
   return { ...p, id: Number(r.lastInsertRowid), semaforo };
 }
 
@@ -107,10 +139,10 @@ export function inserirComando(db: Banco, c: NovoComando): Comando {
   const semaforo = semaforoDoComando(c.regra);
   const r = db
     .prepare(
-      `INSERT INTO comandos (criado_em, tipo, alvo, regra, semaforo)
-       VALUES (@criadoEm, @tipo, @alvo, @regra, @semaforo)`,
+      `INSERT INTO comandos (criado_em, origem, sessao, tipo, alvo, regra, semaforo)
+       VALUES (@criadoEm, @origem, @sessao, @tipo, @alvo, @regra, @semaforo)`,
     )
-    .run({ criadoEm: c.criadoEm, tipo: c.tipo, alvo: c.alvo, regra: c.regra, semaforo });
+    .run({ criadoEm: c.criadoEm, origem: c.origem, sessao: c.sessao, tipo: c.tipo, alvo: c.alvo, regra: c.regra, semaforo });
   return { ...c, id: Number(r.lastInsertRowid), semaforo };
 }
 
@@ -126,7 +158,7 @@ export function lerPlacar(db: Banco): Placar {
   return { passaram: conta("verde"), perguntas: conta("amarelo"), barrados: conta("vermelho"), segurados };
 }
 
-export function lerFeed(db: Banco, limite = 50): Feed {
+export function lerFeed(db: Banco, limite = 50): FeedDoBanco {
   const prompts = db
     .prepare("SELECT * FROM prompts ORDER BY criado_em DESC, id DESC LIMIT ?")
     .all(limite) as LinhaPrompt[];
@@ -136,33 +168,25 @@ export function lerFeed(db: Banco, limite = 50): Feed {
   return { prompts: prompts.map(paraPrompt), comandos: comandos.map(paraComando), placar: lerPlacar(db) };
 }
 
-function semearSeVazio(db: Banco, agora: number) {
-  const { n } = db.prepare("SELECT (SELECT COUNT(*) FROM prompts) + (SELECT COUNT(*) FROM comandos) AS n").get() as {
-    n: number;
-  };
-  if (n > 0) return;
-  const quando = (minutos: number) => new Date(agora - minutos * 60_000).toISOString();
+/** Banco de versão antiga só tem dados de mentira: recria as tabelas, uma vez. */
+function migrar(db: Banco) {
+  const versao = db.pragma("user_version", { simple: true }) as number;
+  if (versao >= VERSAO_ESQUEMA) {
+    db.exec(ESQUEMA);
+    return;
+  }
   db.transaction(() => {
-    for (const e of exemplosPrompts) {
-      inserirPrompt(db, {
-        texto: e.texto,
-        criterios: e.criterios,
-        nota: calcularNota(e.criterios),
-        criadoEm: quando(e.minutosAtras),
-      });
-    }
-    for (const e of exemplosComandos) {
-      inserirComando(db, { tipo: e.tipo, alvo: e.alvo, regra: e.regra, criadoEm: quando(e.minutosAtras) });
-    }
+    db.exec("DROP TABLE IF EXISTS prompts; DROP TABLE IF EXISTS comandos;");
+    db.exec(ESQUEMA);
+    db.pragma(`user_version = ${VERSAO_ESQUEMA}`);
   })();
 }
 
-/** Abre (ou cria) o banco, garante as tabelas e grava os exemplos se estiver vazio. */
-export function abrirBanco(caminho: string, agora = Date.now()): Banco {
+/** Abre (ou cria) o banco e garante o esquema atual. */
+export function abrirBanco(caminho: string): Banco {
   const db = new Database(caminho);
   db.pragma("journal_mode = WAL");
-  db.exec(ESQUEMA);
-  semearSeVazio(db, agora);
+  migrar(db);
   return db;
 }
 
