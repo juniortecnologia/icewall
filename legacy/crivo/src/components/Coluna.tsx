@@ -8,10 +8,12 @@ interface Props {
   total: number;
   /** No celular, só a coluna da aba ativa aparece. */
   oculta: boolean;
+  /** Mensagem quando ainda não chegou nada. */
+  vazio: string;
   children: ReactNode;
 }
 
-export function Coluna({ id, titulo, subtitulo, icone, total, oculta, children }: Props) {
+export function Coluna({ id, titulo, subtitulo, icone, total, oculta, vazio, children }: Props) {
   return (
     <section
       id={id}
@@ -30,7 +32,11 @@ export function Coluna({ id, titulo, subtitulo, icone, total, oculta, children }
         </div>
         <span className="text-sm text-apagado tabular-nums">{total} itens</span>
       </header>
-      <ol className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">{children}</ol>
+      {total === 0 ? (
+        <p className="p-6 text-sm leading-relaxed text-apagado">{vazio}</p>
+      ) : (
+        <ol className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">{children}</ol>
+      )}
     </section>
   );
 }

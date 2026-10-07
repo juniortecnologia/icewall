@@ -23,6 +23,7 @@ export function ItemPrompt({ prompt, novo }: { prompt: Prompt; novo: boolean }) 
   const idDetalhe = useId();
   const cor = COR_ENTRADA[prompt.semaforo];
   const c = prompt.criterios;
+  const semNota = prompt.nota === null;
 
   return (
     <li className={`overflow-hidden rounded-md border border-borda bg-painel ${novo ? "animate-entrada" : ""}`}>
@@ -36,7 +37,7 @@ export function ItemPrompt({ prompt, novo }: { prompt: Prompt; novo: boolean }) 
         <SemaforoEntrada semaforo={prompt.semaforo} />
         <span className="min-w-0 flex-1">
           <span
-            className={`font-mono text-sm leading-relaxed [overflow-wrap:anywhere] ${aberto ? "block" : "line-clamp-2"}`}
+            className={`font-mono text-sm leading-relaxed [overflow-wrap:anywhere] ${aberto ? "block whitespace-pre-wrap" : "line-clamp-2"}`}
           >
             {prompt.texto}
           </span>
@@ -52,9 +53,13 @@ export function ItemPrompt({ prompt, novo }: { prompt: Prompt; novo: boolean }) 
         <span className="flex shrink-0 flex-col items-end">
           <span
             className="font-mono text-3xl font-semibold leading-none tabular-nums"
-            style={{ color: cor, textShadow: `0 0 16px color-mix(in oklab, ${cor} 55%, transparent)` }}
+            style={
+              semNota
+                ? { color: "var(--color-apagado)" }
+                : { color: cor, textShadow: `0 0 16px color-mix(in oklab, ${cor} 55%, transparent)` }
+            }
           >
-            {prompt.nota}
+            {semNota ? "—" : prompt.nota}
           </span>
           <span className="mt-1 text-xs text-apagado">nota</span>
         </span>
@@ -67,17 +72,23 @@ export function ItemPrompt({ prompt, novo }: { prompt: Prompt; novo: boolean }) 
             {AVISO[prompt.semaforo]}
           </p>
         ) : null}
-        <BarraCriterio
-          rotulo="Tamanho do pedido"
-          pct={c.tamanhoPct}
-          detalhe={ROTULO_TAMANHO[c.tamanho]}
-          escala
-          alerta={c.tamanho === "sistema"}
-        />
-        <BarraCriterio rotulo="Objetivo claro" pct={c.objetivoPct} />
-        <BarraCriterio rotulo="Diz onde mexer" pct={c.ondePct} />
-        <BarraCriterio rotulo="Diz quando está pronto" pct={c.prontoPct} />
-        <BarraCriterio rotulo="Foco num assunto só" pct={c.focoPct} />
+        {c === null ? (
+          <p className="text-sm text-apagado">Ainda sem avaliação: a nota chega quando a IA for ligada.</p>
+        ) : (
+          <>
+            <BarraCriterio
+              rotulo="Tamanho do pedido"
+              pct={c.tamanhoPct}
+              detalhe={ROTULO_TAMANHO[c.tamanho]}
+              escala
+              alerta={c.tamanho === "sistema"}
+            />
+            <BarraCriterio rotulo="Objetivo claro" pct={c.objetivoPct} />
+            <BarraCriterio rotulo="Diz onde mexer" pct={c.ondePct} />
+            <BarraCriterio rotulo="Diz quando está pronto" pct={c.prontoPct} />
+            <BarraCriterio rotulo="Foco num assunto só" pct={c.focoPct} />
+          </>
+        )}
       </div>
     </li>
   );

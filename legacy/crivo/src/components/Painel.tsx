@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Feed } from "@/lib/tipos";
+import { formatarHora } from "@/lib/hora";
+import type { Conexao, Feed } from "@/lib/tipos";
 import { Coluna } from "./Coluna";
 import { IconeEntrada, IconeSaida, Logo } from "./icones";
 import { ItemComando } from "./ItemComando";
@@ -9,12 +10,39 @@ import { ItemPrompt } from "./ItemPrompt";
 import { Placar } from "./Placar";
 import { Rodape } from "./Rodape";
 
-const INTERVALO_MS = 2000;
+const INTERVALO_MS = 1000;
 const maiorId = (xs: { id: number }[]) => xs.reduce((m, x) => Math.max(m, x.id), 0);
 
 type Aba = "entrada" | "saida";
 
-export function Cabecalho({ sinal }: { sinal: "ao-vivo" | "sem-sinal" | "carregando" }) {
+const PROJETO = "happy-team-chat";
+
+function SinalProjeto({ conexao }: { conexao: Conexao }) {
+  const cor = conexao.conectado ? "var(--color-info)" : "var(--color-apagado)";
+  return (
+    <div className="text-right text-sm">
+      <p className="flex items-center justify-end gap-2 font-medium" style={{ color: cor }}>
+        <span
+          aria-hidden="true"
+          className="size-2 rounded-full"
+          style={{ background: cor, boxShadow: conexao.conectado ? `0 0 10px ${cor}` : "none" }}
+        />
+        {conexao.conectado ? `${PROJETO} conectado` : `Esperando o ${PROJETO}`}
+      </p>
+      {conexao.ultimoSinal ? (
+        <p className="text-xs text-apagado tabular-nums">último sinal às {formatarHora(conexao.ultimoSinal)}</p>
+      ) : null}
+    </div>
+  );
+}
+
+export function Cabecalho({
+  sinal,
+  conexao,
+}: {
+  sinal: "ao-vivo" | "sem-sinal" | "carregando";
+  conexao?: Conexao;
+}) {
   const cor = sinal === "ao-vivo" ? "var(--color-verde)" : sinal === "sem-sinal" ? "var(--color-ambar)" : "var(--color-apagado)";
   const texto = sinal === "ao-vivo" ? "Ao vivo" : sinal === "sem-sinal" ? "Sem sinal" : "Conectando…";
   return (
@@ -24,14 +52,17 @@ export function Cabecalho({ sinal }: { sinal: "ao-vivo" | "sem-sinal" | "carrega
         <h1 className="text-3xl font-bold uppercase leading-none tracking-[0.08em] [font-stretch:75%]">Crivo</h1>
         <p className="mt-1 text-sm text-apagado">Os dois portões do Claude Code</p>
       </div>
-      <p role="status" className="ml-auto flex items-center gap-2 text-sm font-medium">
-        <span
-          aria-hidden="true"
-          className={`size-2 rounded-full ${sinal === "ao-vivo" ? "animate-pulso" : ""}`}
-          style={{ background: cor, boxShadow: `0 0 10px ${cor}` }}
-        />
-        <span style={{ color: cor }}>{texto}</span>
-      </p>
+      <div className="ml-auto flex flex-col items-end gap-1.5">
+        <p role="status" className="flex items-center gap-2 text-sm font-medium">
+          <span
+            aria-hidden="true"
+            className={`size-2 rounded-full ${sinal === "ao-vivo" ? "animate-pulso" : ""}`}
+            style={{ background: cor, boxShadow: `0 0 10px ${cor}` }}
+          />
+          <span style={{ color: cor }}>{texto}</span>
+        </p>
+        {conexao ? <SinalProjeto conexao={conexao} /> : null}
+      </div>
     </header>
   );
 }
@@ -40,8 +71,6 @@ export function Painel({ feedInicial, chaveCarregada }: { feedInicial: Feed; cha
   const [feed, setFeed] = useState(feedInicial);
   const [sinal, setSinal] = useState<"ao-vivo" | "sem-sinal">("ao-vivo");
   const [aba, setAba] = useState<Aba>("entrada");
-  const [simulando, setSimulando] = useState(false);
-  const [erroSimular, setErroSimular] = useState<string | null>(null);
   // Só os itens que chegaram depois do carregamento ganham o brilho de entrada.
   const [corte] = useState(() => ({ prompt: maiorId(feedInicial.prompts), comando: maiorId(feedInicial.comandos) }));
 
@@ -92,29 +121,9 @@ export function Painel({ feedInicial, chaveCarregada }: { feedInicial: Feed; cha
     };
   }, [consultar]);
 
-  const simulandoAgora = useRef(false);
-
-  async function simular() {
-    if (simulandoAgora.current) return;
-    simulandoAgora.current = true;
-    setSimulando(true);
-    setErroSimular(null);
-    const n = ++sequencia.current;
-    try {
-      const r = await fetch("/api/simular", { method: "POST" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      aplicar(n, (await r.json()) as Feed);
-    } catch {
-      setErroSimular("Não deu para simular agora. Tente de novo.");
-    } finally {
-      simulandoAgora.current = false;
-      setSimulando(false);
-    }
-  }
-
   return (
     <div className="mx-auto flex min-h-dvh max-w-[1600px] flex-col gap-4 p-4 md:h-dvh md:p-6">
-      <Cabecalho sinal={sinal} />
+      <Cabecalho sinal={sinal} conexao={feed.conexao} />
 
       <Placar placar={feed.placar} />
 
@@ -149,6 +158,7 @@ export function Painel({ feedInicial, chaveCarregada }: { feedInicial: Feed; cha
           icone={<IconeEntrada className="size-5" />}
           total={feed.prompts.length}
           oculta={aba !== "entrada"}
+          vazio={`Esperando o primeiro prompt do ${PROJETO}. Mande algo para o Claude Code lá.`}
         >
           {feed.prompts.map((p) => (
             <ItemPrompt key={p.id} prompt={p} novo={p.id > corte.prompt} />
@@ -161,6 +171,7 @@ export function Painel({ feedInicial, chaveCarregada }: { feedInicial: Feed; cha
           icone={<IconeSaida className="size-5" />}
           total={feed.comandos.length}
           oculta={aba !== "saida"}
+          vazio="Nenhum comando ainda. Aparece aqui quando o Claude for rodar um comando ou mexer num arquivo."
         >
           {feed.comandos.map((c) => (
             <ItemComando key={c.id} comando={c} novo={c.id > corte.comando} />
@@ -168,7 +179,7 @@ export function Painel({ feedInicial, chaveCarregada }: { feedInicial: Feed; cha
         </Coluna>
       </main>
 
-      <Rodape chaveCarregada={chaveCarregada} simulando={simulando} erro={erroSimular} onSimular={simular} />
+      <Rodape chaveCarregada={chaveCarregada} />
     </div>
   );
 }
