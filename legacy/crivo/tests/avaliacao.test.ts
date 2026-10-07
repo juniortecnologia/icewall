@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcularNota, limitarPct, semaforoDaNota, semaforoDoComando } from "@/lib/avaliacao";
+import { calcularNota, limitarPct, semaforoDaNota, semaforoDoComando, semaforoDoPrompt } from "@/lib/avaliacao";
 import type { Criterios } from "@/lib/tipos";
 
 const criterios = (o: number, w: number, p: number, f: number): Criterios => ({
@@ -55,5 +55,16 @@ describe("limitarPct", () => {
     expect(limitarPct(-5)).toBe(0);
     expect(limitarPct(130)).toBe(100);
     expect(limitarPct(41.6)).toBe(42);
+  });
+});
+
+describe("semaforoDoPrompt", () => {
+  it("sem nota (ainda sem IA) é verde: o prompt passou", () => {
+    expect(semaforoDoPrompt(null)).toBe("verde");
+  });
+  it("com nota segue a mesma régua da nota", () => {
+    expect(semaforoDoPrompt(39)).toBe("vermelho");
+    expect(semaforoDoPrompt(40)).toBe("amarelo");
+    expect(semaforoDoPrompt(70)).toBe("verde");
   });
 });

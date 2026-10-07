@@ -19,14 +19,20 @@ export interface Prompt {
   id: number;
   texto: string;
   criadoEm: string;
-  criterios: Criterios;
-  nota: number;
+  /** Nome do projeto de onde veio (última pasta do cwd do Claude Code). */
+  origem: string;
+  sessao: string | null;
+  /** Nulos enquanto não houver avaliação (IA). */
+  criterios: Criterios | null;
+  nota: number | null;
   semaforo: Semaforo;
 }
 
 export interface Comando {
   id: number;
   criadoEm: string;
+  origem: string;
+  sessao: string | null;
   tipo: TipoAlvo;
   alvo: string;
   regra: string | null;
@@ -40,11 +46,19 @@ export interface Placar {
   segurados: number;
 }
 
+export interface Conexao {
+  conectado: boolean;
+  ultimoSinal: string | null;
+}
+
 export interface Feed {
   prompts: Prompt[];
   comandos: Comando[];
   placar: Placar;
+  conexao: Conexao;
 }
+
+export type FeedDoBanco = Omit<Feed, "conexao">;
 
 export type NovoPrompt = Omit<Prompt, "id" | "semaforo">;
 export type NovoComando = Omit<Comando, "id" | "semaforo">;

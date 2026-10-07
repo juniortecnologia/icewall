@@ -23,3 +23,8 @@ export function calcularNota(c: Criterios): number {
 export function semaforoDoComando(regra: string | null): SemaforoSaida {
   return regra?.trim() ? "segurado" : "liberado";
 }
+
+/** Sem nota ainda (sem IA), o prompt passou: verde. */
+export function semaforoDoPrompt(nota: number | null): Semaforo {
+  return nota === null ? "verde" : semaforoDaNota(nota);
+}
