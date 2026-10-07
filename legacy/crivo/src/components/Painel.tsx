@@ -92,7 +92,11 @@ export function Painel({ feedInicial, chaveCarregada }: { feedInicial: Feed; cha
     };
   }, [consultar]);
 
+  const simulandoAgora = useRef(false);
+
   async function simular() {
+    if (simulandoAgora.current) return;
+    simulandoAgora.current = true;
     setSimulando(true);
     setErroSimular(null);
     const n = ++sequencia.current;
@@ -103,6 +107,7 @@ export function Painel({ feedInicial, chaveCarregada }: { feedInicial: Feed; cha
     } catch {
       setErroSimular("Não deu para simular agora. Tente de novo.");
     } finally {
+      simulandoAgora.current = false;
       setSimulando(false);
     }
   }

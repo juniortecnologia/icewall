@@ -26,8 +26,9 @@ export function Rodape({ chaveCarregada, simulando, erro, onSimular }: Props) {
         <button
           type="button"
           onClick={onSimular}
-          disabled={simulando}
-          className="flex min-h-9 items-center gap-1.5 rounded border border-borda px-3 py-1.5 transition-colors hover:border-apagado hover:text-texto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:opacity-50"
+          // aria-disabled em vez de disabled: o foco do teclado continua no botão
+          aria-disabled={simulando}
+          className="flex min-h-9 items-center gap-1.5 rounded border border-borda px-3 py-1.5 transition-colors hover:border-apagado hover:text-texto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info aria-disabled:opacity-50"
         >
           <IconeSimular className="size-4" />
           {simulando ? "Simulando…" : "Simular"}
