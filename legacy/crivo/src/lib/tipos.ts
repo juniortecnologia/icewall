@@ -62,3 +62,48 @@ export type FeedDoBanco = Omit<Feed, "conexao">;
 
 export type NovoPrompt = Omit<Prompt, "id" | "semaforo">;
 export type NovoComando = Omit<Comando, "id" | "semaforo">;
+
+/** Os critérios que podem faltar num pedido, na ordem em que são listados. */
+export type Criterio = "objetivo" | "onde" | "pronto" | "mistura";
+
+/** Como o prompt foi tratado: pelo Jev, pela marca de pressa, por ser curto, ou o Jev falhou. */
+export type Avaliacao = "jev" | "pressa" | "curta" | "falhou";
+
+/** O que o Jev respondeu, em chances de 0 a 1. */
+export interface RespostaJev {
+  ok: true;
+  tamanho: Tamanho;
+  probTamanho: Record<Tamanho, number>;
+  objetivo: number;
+  onde: number;
+  pronto: number;
+  mistura: number;
+  duracaoMs: number;
+}
+
+/** O Jev não respondeu: o prompt passa como "não avaliado". */
+export interface FalhaJev {
+  ok: false;
+  motivo: string;
+  duracaoMs: number;
+}
+
+export type Avaliador = (texto: string) => Promise<RespostaJev | FalhaJev>;
+
+/** Saída do gancho UserPromptSubmit. Vazia = segue em silêncio. */
+export interface SaidaGancho {
+  decision?: "block";
+  reason?: string;
+  hookSpecificOutput?: { hookEventName: "UserPromptSubmit"; additionalContext: string };
+}
+
+export interface Decisao {
+  semaforo: Semaforo;
+  nota: number | null;
+  criterios: Criterios | null;
+  faltando: Criterio[] | null;
+  avaliacao: Avaliacao;
+  motivo: string | null;
+  duracaoMs: number | null;
+  saidaGancho: SaidaGancho;
+}
