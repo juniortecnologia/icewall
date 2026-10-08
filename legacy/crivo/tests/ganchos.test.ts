@@ -12,8 +12,6 @@ describe("lerGanchoPrompt", () => {
       criadoEm: "2026-10-07T12:00:00.000Z",
       origem: "happy-team-chat",
       sessao: "sess-1",
-      criterios: null,
-      nota: null,
     });
   });
 

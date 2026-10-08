@@ -13,6 +13,11 @@ const novoPrompt = (extra: Partial<NovoPrompt> = {}): NovoPrompt => ({
   sessao: "sess-1",
   criterios: null,
   nota: null,
+  semaforo: "verde",
+  avaliacao: "curta",
+  duracaoMs: null,
+  faltando: null,
+  motivo: null,
   ...extra,
 });
 
@@ -46,7 +51,7 @@ describe("banco novo", () => {
 });
 
 describe("prompts", () => {
-  it("sem nota: grava, lê igual, fica verde e conta em 'passaram'", () => {
+  it("sem nota: grava, lê igual e conta em 'passaram'", () => {
     const db = abrirBanco(":memory:");
     const texto = "linha 1\nlinha 2 com 'aspas', <b>html</b> e emoji 🚦";
     const p = inserirPrompt(db, novoPrompt({ texto }));
@@ -55,12 +60,22 @@ describe("prompts", () => {
     expect(lerPlacar(db).passaram).toBe(1);
   });
 
-  it("com nota: grava os critérios e a cor segue a nota", () => {
+  it("avaliado pelo Jev: grava cor, critérios, faltando e duração como vieram (a cor não sai da nota)", () => {
     const db = abrirBanco(":memory:");
-    const criterios = { tamanho: "ajuste" as const, tamanhoPct: 10, objetivoPct: 50, ondePct: 50, prontoPct: 20, focoPct: 30 };
-    const p = inserirPrompt(db, novoPrompt({ nota: 39, criterios }));
-    expect(p.semaforo).toBe("vermelho");
+    const criterios = { tamanho: "funcionalidade" as const, tamanhoPct: 50, objetivoPct: 90, ondePct: 30, prontoPct: 90, focoPct: 90 };
+    const p = inserirPrompt(
+      db,
+      novoPrompt({ nota: 75, criterios, semaforo: "amarelo", avaliacao: "jev", duracaoMs: 1312, faltando: ["onde"] }),
+    );
+    expect(p.semaforo).toBe("amarelo");
     expect(lerFeed(db).prompts[0]).toEqual(p);
+    expect(lerPlacar(db).perguntas).toBe(1);
+  });
+
+  it("Jev falhou: guarda o motivo", () => {
+    const db = abrirBanco(":memory:");
+    inserirPrompt(db, novoPrompt({ avaliacao: "falhou", motivo: "TypeSafe indisponível", duracaoMs: 8001 }));
+    expect(lerFeed(db).prompts[0]).toMatchObject({ avaliacao: "falhou", motivo: "TypeSafe indisponível", faltando: null });
   });
 
   it("prompt enorme é gravado inteiro", () => {
@@ -138,5 +153,33 @@ describe("migração", () => {
     const b = new Database(caminho);
     expect((b.prepare("SELECT COUNT(*) AS n FROM prompts").get() as { n: number }).n).toBe(1);
     b.close();
+  });
+
+  it("banco v2 com dados vira v3 sem perder nada; prompts antigos ficam sem avaliação", () => {
+    const caminho = arquivoTemporario();
+    const v2 = new Database(caminho);
+    v2.exec(`
+      CREATE TABLE prompts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, texto TEXT NOT NULL, criado_em TEXT NOT NULL, origem TEXT NOT NULL, sessao TEXT,
+        tamanho TEXT CHECK (tamanho IN ('ajuste', 'funcionalidade', 'sistema')),
+        tamanho_pct INTEGER, objetivo_pct INTEGER, onde_pct INTEGER, pronto_pct INTEGER, foco_pct INTEGER, nota INTEGER,
+        semaforo TEXT NOT NULL CHECK (semaforo IN ('verde', 'amarelo', 'vermelho')));
+      CREATE TABLE comandos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, criado_em TEXT NOT NULL, origem TEXT NOT NULL, sessao TEXT,
+        tipo TEXT NOT NULL, alvo TEXT NOT NULL, regra TEXT, semaforo TEXT NOT NULL);
+      INSERT INTO prompts (texto, criado_em, origem, sessao, semaforo) VALUES ('prompt da etapa 2', '2026-10-07T10:00:00.000Z', 'happy-team-chat', 's', 'verde');
+      INSERT INTO comandos (criado_em, origem, sessao, tipo, alvo, semaforo) VALUES ('2026-10-07T10:00:01.000Z', 'happy-team-chat', 's', 'comando', 'ls', 'liberado');
+      PRAGMA user_version = 2;`);
+    v2.close();
+
+    const db = abrirBanco(caminho);
+    expect(db.pragma("user_version", { simple: true })).toBe(3);
+    const feed = lerFeed(db);
+    expect(feed.prompts).toHaveLength(1);
+    expect(feed.prompts[0]).toMatchObject({ texto: "prompt da etapa 2", avaliacao: null, duracaoMs: null, faltando: null, motivo: null });
+    expect(feed.comandos).toHaveLength(1);
+    inserirPrompt(db, novoPrompt({ avaliacao: "jev", faltando: ["objetivo", "mistura"], semaforo: "amarelo" }));
+    expect(lerFeed(db).prompts[0].faltando).toEqual(["objetivo", "mistura"]);
+    db.close();
   });
 });

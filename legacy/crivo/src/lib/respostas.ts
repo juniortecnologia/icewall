@@ -38,7 +38,16 @@ export async function respostaGanchoPrompt(req: Request): Promise<Response> {
   const novo = lerGanchoPrompt(await lerCorpo(req));
   if (!novo) return recusar("pacote de prompt inválido");
   try {
-    inserirPrompt(banco(), novo);
+    inserirPrompt(banco(), {
+      ...novo,
+      criterios: null,
+      nota: null,
+      semaforo: "verde",
+      avaliacao: null,
+      duracaoMs: null,
+      faltando: null,
+      motivo: null,
+    });
     registrarSinal("prompt", novo.criadoEm);
     return Response.json({});
   } catch (erro) {

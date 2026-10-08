@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { semaforoDoComando, semaforoDoPrompt } from "./avaliacao";
+import { semaforoDoComando } from "./avaliacao";
 import type {
+  Avaliacao,
   Comando,
+  Criterio,
   FeedDoBanco,
   NovoComando,
   NovoPrompt,
@@ -17,10 +19,10 @@ import type {
 
 export type Banco = Database.Database;
 
-/** v1 = etapa 1 (dados de mentira); v2 = dados reais vindos dos hooks. */
-export const VERSAO_ESQUEMA = 2;
+/** v1 = etapa 1 (dados de mentira); v2 = dados reais vindos dos hooks; v3 = avaliação do Jev. */
+export const VERSAO_ESQUEMA = 3;
 
-// CHECK com valor nulo passa: nota e critérios ficam vazios até a IA existir.
+// CHECK com valor nulo passa: nota e critérios ficam vazios quando o Jev não avalia.
 const ESQUEMA = `
 CREATE TABLE IF NOT EXISTS prompts (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,7 +37,11 @@ CREATE TABLE IF NOT EXISTS prompts (
   pronto_pct   INTEGER CHECK (pronto_pct   BETWEEN 0 AND 100),
   foco_pct     INTEGER CHECK (foco_pct     BETWEEN 0 AND 100),
   nota         INTEGER CHECK (nota         BETWEEN 0 AND 100),
-  semaforo     TEXT    NOT NULL CHECK (semaforo IN ('verde', 'amarelo', 'vermelho'))
+  semaforo     TEXT    NOT NULL CHECK (semaforo IN ('verde', 'amarelo', 'vermelho')),
+  avaliacao    TEXT    CHECK (avaliacao IN ('jev', 'pressa', 'curta', 'falhou')),
+  duracao_ms   INTEGER,
+  faltando     TEXT,
+  motivo       TEXT
 );
 CREATE TABLE IF NOT EXISTS comandos (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +55,14 @@ CREATE TABLE IF NOT EXISTS comandos (
 );
 CREATE INDEX IF NOT EXISTS prompts_recentes  ON prompts  (criado_em DESC, id DESC);
 CREATE INDEX IF NOT EXISTS comandos_recentes ON comandos (criado_em DESC, id DESC);
+`;
+
+/** v2 → v3: as colunas da avaliação, sem tocar nos dados (nulas nos prompts antigos). */
+const COLUNAS_V3 = `
+ALTER TABLE prompts ADD COLUMN avaliacao  TEXT CHECK (avaliacao IN ('jev', 'pressa', 'curta', 'falhou'));
+ALTER TABLE prompts ADD COLUMN duracao_ms INTEGER;
+ALTER TABLE prompts ADD COLUMN faltando   TEXT;
+ALTER TABLE prompts ADD COLUMN motivo     TEXT;
 `;
 
 interface LinhaPrompt {
@@ -65,6 +79,11 @@ interface LinhaPrompt {
   foco_pct: number | null;
   nota: number | null;
   semaforo: Semaforo;
+  avaliacao: Avaliacao | null;
+  duracao_ms: number | null;
+  /** Array JSON de Criterio. */
+  faltando: string | null;
+  motivo: string | null;
 }
 
 interface LinhaComando {
@@ -97,6 +116,10 @@ const paraPrompt = (l: LinhaPrompt): Prompt => ({
         },
   nota: l.nota,
   semaforo: l.semaforo,
+  avaliacao: l.avaliacao,
+  duracaoMs: l.duracao_ms,
+  faltando: l.faltando === null ? null : (JSON.parse(l.faltando) as Criterio[]),
+  motivo: l.motivo,
 });
 
 const paraComando = (l: LinhaComando): Comando => ({
@@ -111,12 +134,11 @@ const paraComando = (l: LinhaComando): Comando => ({
 });
 
 export function inserirPrompt(db: Banco, p: NovoPrompt): Prompt {
-  const semaforo = semaforoDoPrompt(p.nota);
   const c = p.criterios;
   const r = db
     .prepare(
-      `INSERT INTO prompts (texto, criado_em, origem, sessao, tamanho, tamanho_pct, objetivo_pct, onde_pct, pronto_pct, foco_pct, nota, semaforo)
-       VALUES (@texto, @criadoEm, @origem, @sessao, @tamanho, @tamanhoPct, @objetivoPct, @ondePct, @prontoPct, @focoPct, @nota, @semaforo)`,
+      `INSERT INTO prompts (texto, criado_em, origem, sessao, tamanho, tamanho_pct, objetivo_pct, onde_pct, pronto_pct, foco_pct, nota, semaforo, avaliacao, duracao_ms, faltando, motivo)
+       VALUES (@texto, @criadoEm, @origem, @sessao, @tamanho, @tamanhoPct, @objetivoPct, @ondePct, @prontoPct, @focoPct, @nota, @semaforo, @avaliacao, @duracaoMs, @faltando, @motivo)`,
     )
     .run({
       texto: p.texto,
@@ -130,9 +152,13 @@ export function inserirPrompt(db: Banco, p: NovoPrompt): Prompt {
       prontoPct: c?.prontoPct ?? null,
       focoPct: c?.focoPct ?? null,
       nota: p.nota,
-      semaforo,
+      semaforo: p.semaforo,
+      avaliacao: p.avaliacao,
+      duracaoMs: p.duracaoMs,
+      faltando: p.faltando === null ? null : JSON.stringify(p.faltando),
+      motivo: p.motivo,
     });
-  return { ...p, id: Number(r.lastInsertRowid), semaforo };
+  return { ...p, id: Number(r.lastInsertRowid) };
 }
 
 export function inserirComando(db: Banco, c: NovoComando): Comando {
@@ -170,7 +196,7 @@ export function lerFeed(db: Banco, limite = 50): FeedDoBanco {
 
 /**
  * Passos explícitos por versão. Só o passo da v1 apaga tabelas, porque a v1 tinha apenas
- * dados de mentira. Uma v3 futura precisa de um passo próprio que preserve os dados (ALTER).
+ * dados de mentira. Daqui em diante, todo passo preserva os dados (ALTER).
  */
 function migrar(db: Banco) {
   const versao = db.pragma("user_version", { simple: true }) as number;
@@ -179,6 +205,7 @@ function migrar(db: Banco) {
   }
   db.transaction(() => {
     if (versao < 2) db.exec("DROP TABLE IF EXISTS prompts; DROP TABLE IF EXISTS comandos;");
+    if (versao === 2) db.exec(COLUNAS_V3);
     db.exec(ESQUEMA);
     db.pragma(`user_version = ${VERSAO_ESQUEMA}`);
   })();

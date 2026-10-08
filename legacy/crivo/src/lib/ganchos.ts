@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { NovoComando, NovoPrompt, TipoAlvo } from "./tipos";
+import type { NovoComando, PacotePrompt, TipoAlvo } from "./tipos";
 
 // Tradução dos pacotes que os hooks do Claude Code mandam (UserPromptSubmit e PreToolUse).
 
@@ -18,19 +18,12 @@ const ALVOS: Record<string, { tipo: TipoAlvo; campo: string }> = {
   NotebookEdit: { tipo: "arquivo", campo: "notebook_path" },
 };
 
-export function lerGanchoPrompt(corpo: unknown, agora = new Date()): NovoPrompt | null {
+export function lerGanchoPrompt(corpo: unknown, agora = new Date()): PacotePrompt | null {
   if (!ehObjeto(corpo)) return null;
   const texto = textoCheio(corpo.prompt);
   const cwd = textoCheio(corpo.cwd);
   if (!texto || !cwd) return null;
-  return {
-    texto,
-    criadoEm: agora.toISOString(),
-    origem: origemDe(cwd),
-    sessao: textoCheio(corpo.session_id),
-    criterios: null,
-    nota: null,
-  };
+  return { texto, criadoEm: agora.toISOString(), origem: origemDe(cwd), sessao: textoCheio(corpo.session_id) };
 }
 
 /** `"ignorar"` = ferramenta fora do portão de saída; `null` = pacote inválido. */

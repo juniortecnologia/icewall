@@ -22,10 +22,16 @@ export interface Prompt {
   /** Nome do projeto de onde veio (última pasta do cwd do Claude Code). */
   origem: string;
   sessao: string | null;
-  /** Nulos enquanto não houver avaliação (IA). */
+  /** Nulos quando o Jev não avaliou (pressa, resposta curta, falha ou etapa 2). */
   criterios: Criterios | null;
   nota: number | null;
   semaforo: Semaforo;
+  /** Nulo = registrado na etapa 2, antes da avaliação com IA. */
+  avaliacao: Avaliacao | null;
+  duracaoMs: number | null;
+  faltando: Criterio[] | null;
+  /** Por que o Jev não avaliou. */
+  motivo: string | null;
 }
 
 export interface Comando {
@@ -60,7 +66,9 @@ export interface Feed {
 
 export type FeedDoBanco = Omit<Feed, "conexao">;
 
-export type NovoPrompt = Omit<Prompt, "id" | "semaforo">;
+/** O que o gancho UserPromptSubmit traz, antes de qualquer avaliação. */
+export type PacotePrompt = Pick<Prompt, "texto" | "criadoEm" | "origem" | "sessao">;
+export type NovoPrompt = Omit<Prompt, "id">;
 export type NovoComando = Omit<Comando, "id" | "semaforo">;
 
 /** Os critérios que podem faltar num pedido, na ordem em que são listados. */
