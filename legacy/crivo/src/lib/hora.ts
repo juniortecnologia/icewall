@@ -9,3 +9,8 @@ const formato = new Intl.DateTimeFormat("pt-BR", {
 export function formatarHora(iso: string): string {
   return formato.format(new Date(iso));
 }
+
+/** 1312 → "1,3 s". */
+export function formatarDuracao(ms: number): string {
+  return `${(ms / 1000).toFixed(1).replace(".", ",")} s`;
+}

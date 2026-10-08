@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { formatarHora } from "@/lib/hora";
 import type { Conexao, Feed } from "@/lib/tipos";
 import { Coluna } from "./Coluna";
@@ -9,6 +9,7 @@ import { ItemComando } from "./ItemComando";
 import { ItemPrompt } from "./ItemPrompt";
 import { Placar } from "./Placar";
 import { Rodape } from "./Rodape";
+import { TestarPrompt } from "./TestarPrompt";
 
 const INTERVALO_MS = 1000;
 const maiorId = (xs: { id: number }[]) => xs.reduce((m, x) => Math.max(m, x.id), 0);
@@ -39,9 +40,11 @@ function SinalProjeto({ conexao }: { conexao: Conexao }) {
 export function Cabecalho({
   sinal,
   conexao,
+  acao,
 }: {
   sinal: "ao-vivo" | "sem-sinal" | "carregando";
   conexao?: Conexao;
+  acao?: ReactNode;
 }) {
   const cor = sinal === "ao-vivo" ? "var(--color-verde)" : sinal === "sem-sinal" ? "var(--color-ambar)" : "var(--color-apagado)";
   const texto = sinal === "ao-vivo" ? "Ao vivo" : sinal === "sem-sinal" ? "Sem sinal" : "Conectando…";
@@ -53,6 +56,7 @@ export function Cabecalho({
         <p className="mt-1 text-sm text-apagado">Os dois portões do Claude Code</p>
       </div>
       <div className="ml-auto flex flex-col items-end gap-1.5">
+        {acao}
         <p role="status" className="flex items-center gap-2 text-sm font-medium">
           <span
             aria-hidden="true"
@@ -123,7 +127,7 @@ export function Painel({ feedInicial, chaveCarregada }: { feedInicial: Feed; cha
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-[1600px] flex-col gap-4 p-4 md:h-dvh md:p-6">
-      <Cabecalho sinal={sinal} conexao={feed.conexao} />
+      <Cabecalho sinal={sinal} conexao={feed.conexao} acao={<TestarPrompt />} />
 
       <Placar placar={feed.placar} />
 

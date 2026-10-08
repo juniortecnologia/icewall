@@ -1,29 +1,17 @@
 "use client";
 
 import { useId, useState } from "react";
-import { formatarHora } from "@/lib/hora";
-import type { Prompt, Tamanho } from "@/lib/tipos";
-import { BarraCriterio } from "./BarraCriterio";
+import { formatarDuracao, formatarHora } from "@/lib/hora";
+import type { Prompt } from "@/lib/tipos";
+import { DetalheAvaliacao } from "./DetalheAvaliacao";
 import { IconeChevron } from "./icones";
 import { COR_ENTRADA, ROTULO_ENTRADA, SemaforoEntrada } from "./Semaforo";
-
-const ROTULO_TAMANHO: Record<Tamanho, string> = {
-  ajuste: "ajuste pequeno",
-  funcionalidade: "funcionalidade",
-  sistema: "sistema inteiro",
-};
-
-const AVISO = {
-  amarelo: "O Claude vai perguntar antes de começar.",
-  vermelho: "Barrado: este prompt não chega ao Claude.",
-} as const;
 
 export function ItemPrompt({ prompt, novo }: { prompt: Prompt; novo: boolean }) {
   const [aberto, setAberto] = useState(false);
   const idDetalhe = useId();
   const cor = COR_ENTRADA[prompt.semaforo];
-  const c = prompt.criterios;
-  const semNota = prompt.nota === null;
+  const semNota = prompt.avaliacao !== "jev" || prompt.nota === null;
 
   return (
     <li className={`overflow-hidden rounded-md border border-borda bg-painel ${novo ? "animate-entrada" : ""}`}>
@@ -41,13 +29,16 @@ export function ItemPrompt({ prompt, novo }: { prompt: Prompt; novo: boolean }) 
           >
             {prompt.texto}
           </span>
-          <span className="mt-2 flex items-center gap-3 text-sm">
+          <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
             <span className="font-medium" style={{ color: cor }}>
               {ROTULO_ENTRADA[prompt.semaforo]}
             </span>
             <time dateTime={prompt.criadoEm} className="text-apagado tabular-nums">
               {formatarHora(prompt.criadoEm)}
             </time>
+            {prompt.duracaoMs ? (
+              <span className="whitespace-nowrap text-apagado tabular-nums">Jev {formatarDuracao(prompt.duracaoMs)}</span>
+            ) : null}
           </span>
         </span>
         <span className="flex shrink-0 flex-col items-end">
@@ -67,28 +58,7 @@ export function ItemPrompt({ prompt, novo }: { prompt: Prompt; novo: boolean }) 
       </button>
 
       <div id={idDetalhe} hidden={!aberto} className="space-y-3 border-t border-borda bg-black/25 px-3 py-3">
-        {prompt.semaforo !== "verde" ? (
-          <p className="text-sm" style={{ color: cor }}>
-            {AVISO[prompt.semaforo]}
-          </p>
-        ) : null}
-        {c === null ? (
-          <p className="text-sm text-apagado">Ainda sem avaliação: a nota chega quando a IA for ligada.</p>
-        ) : (
-          <>
-            <BarraCriterio
-              rotulo="Tamanho do pedido"
-              pct={c.tamanhoPct}
-              detalhe={ROTULO_TAMANHO[c.tamanho]}
-              escala
-              alerta={c.tamanho === "sistema"}
-            />
-            <BarraCriterio rotulo="Objetivo claro" pct={c.objetivoPct} />
-            <BarraCriterio rotulo="Diz onde mexer" pct={c.ondePct} />
-            <BarraCriterio rotulo="Diz quando está pronto" pct={c.prontoPct} />
-            <BarraCriterio rotulo="Foco num assunto só" pct={c.focoPct} />
-          </>
-        )}
+        <DetalheAvaliacao dados={prompt} />
       </div>
     </li>
   );
