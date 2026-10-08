@@ -3,7 +3,7 @@ import { banco, inserirComando, inserirPrompt, lerFeed } from "./db";
 import { decidir } from "./decisao";
 import { lerGanchoFerramenta, lerGanchoPrompt } from "./ganchos";
 import { avaliarComJev } from "./jev";
-import type { Avaliador, Feed } from "./tipos";
+import type { Avaliador, Decisao, Feed } from "./tipos";
 
 /** O que a tela recebe: banco + estado da conexão com o projeto. */
 export function montarFeed(): Feed {
@@ -35,11 +35,32 @@ function recusar(motivo: string): Response {
 
 // Resposta {} = "pode seguir". O gancho de prompt usa `curl -sf`: o corpo da resposta 200 vira a saída do hook.
 
+/** O gancho usa `curl -m 10`: resposta mais lenta que isto o Claude Code já não lê. */
+export const LIMITE_GANCHO_MS = 9000;
+
+const DESISTIU: Pick<Decisao, "semaforo" | "nota" | "criterios" | "faltando" | "avaliacao" | "motivo" | "saidaGancho"> = {
+  semaforo: "verde",
+  nota: null,
+  criterios: null,
+  faltando: null,
+  avaliacao: "falhou",
+  motivo: "o Crivo demorou mais que o gancho espera e o prompt passou",
+  saidaGancho: {},
+};
+
 /** Corpo do POST /api/ganchos/prompt (UserPromptSubmit). */
-export async function respostaGanchoPrompt(req: Request, avaliar: Avaliador = avaliarComJev): Promise<Response> {
+export async function respostaGanchoPrompt(
+  req: Request,
+  avaliar: Avaliador = avaliarComJev,
+  limiteMs = LIMITE_GANCHO_MS,
+): Promise<Response> {
+  const chegada = performance.now();
   const pacote = lerGanchoPrompt(await lerCorpo(req));
   if (!pacote) return recusar("pacote de prompt inválido");
-  const d = await decidir(pacote.texto, avaliar);
+  const decidido = await decidir(pacote.texto, avaliar);
+  // Se o curl já desistiu, o prompt passou: gravar a cor do Jev mentiria no painel.
+  const atrasou = req.signal.aborted || performance.now() - chegada > limiteMs;
+  const d: Decisao = atrasou ? { ...decidido, ...DESISTIU } : decidido;
   try {
     inserirPrompt(banco(), {
       ...pacote,

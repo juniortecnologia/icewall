@@ -168,3 +168,18 @@ describe("POST /api/avaliar (área de teste)", () => {
     expect(await r.json()).toEqual({ erro: "Escreva um prompt para avaliar." });
   });
 });
+
+describe("resposta que chega depois de o gancho desistir", () => {
+  it("passou do limite: grava 'falhou' com o motivo, não o vermelho que o Claude nunca viu", async () => {
+    const antes = (await feed()).placar.barrados;
+    const lento: Avaliador = async () => {
+      await new Promise((r) => setTimeout(r, 30));
+      return { ok: true, tamanho: "funcionalidade", probTamanho: { ajuste: 0, funcionalidade: 1, sistema: 0 }, objetivo: 0.1, onde: 0.1, pronto: 0.1, mistura: 0.1, duracaoMs: 30 };
+    };
+    const r = await respostaGanchoPrompt(prompt(LONGO), lento, 10);
+    expect(await r.json()).toEqual({});
+    const f = await feed();
+    expect(f.prompts[0]).toMatchObject({ avaliacao: "falhou", semaforo: "verde", nota: null, motivo: "o Crivo demorou mais que o gancho espera e o prompt passou" });
+    expect(f.placar.barrados).toBe(antes);
+  });
+});
