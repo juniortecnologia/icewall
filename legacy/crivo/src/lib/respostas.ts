@@ -1,5 +1,5 @@
 import { lerConexao, registrarSinal } from "./conexao";
-import { banco, inserirComando, inserirPrompt, lerFeed } from "./db";
+import { banco, claudePerguntou, inserirComando, inserirPrompt, lerFeed } from "./db";
 import { decidir } from "./decisao";
 import { lerGanchoFerramenta, lerGanchoPrompt } from "./ganchos";
 import { avaliarComJev } from "./jev";
@@ -35,6 +35,17 @@ function recusar(motivo: string): Response {
 
 // Resposta {} = "pode seguir". O gancho de prompt usa `curl -sf`: o corpo da resposta 200 vira a saída do hook.
 
+/** Sem sessão ou com o banco fora do ar, não há como saber: o prompt é avaliado normalmente. */
+function respondendo(sessao: string | null): boolean {
+  if (sessao === null) return false;
+  try {
+    return claudePerguntou(banco(), sessao);
+  } catch (erro) {
+    console.error("[crivo] falha ao ler o último prompt da sessão", erro);
+    return false;
+  }
+}
+
 /** O gancho usa `curl -m 10`: resposta mais lenta que isto o Claude Code já não lê. */
 export const LIMITE_GANCHO_MS = 9000;
 
@@ -57,7 +68,7 @@ export async function respostaGanchoPrompt(
   const chegada = performance.now();
   const pacote = lerGanchoPrompt(await lerCorpo(req));
   if (!pacote) return recusar("pacote de prompt inválido");
-  const decidido = await decidir(pacote.texto, avaliar);
+  const decidido = await decidir(pacote.texto, avaliar, { respondendo: respondendo(pacote.sessao) });
   // Se o curl já desistiu, o prompt passou: gravar a cor do Jev mentiria no painel.
   const atrasou = req.signal.aborted || performance.now() - chegada > limiteMs;
   const d: Decisao = atrasou ? { ...decidido, ...DESISTIU } : decidido;

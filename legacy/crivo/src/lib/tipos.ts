@@ -74,8 +74,8 @@ export type NovoComando = Omit<Comando, "id" | "semaforo">;
 /** Os critérios que podem faltar num pedido, na ordem em que são listados. */
 export type Criterio = "objetivo" | "onde" | "pronto" | "mistura";
 
-/** Como o prompt foi tratado: pelo Jev, pela marca de pressa, por ser curto, ou o Jev falhou. */
-export type Avaliacao = "jev" | "pressa" | "curta" | "falhou";
+/** Como o prompt foi tratado: pelo Jev, pela marca de pressa, por ser curto, por responder ao Claude, ou o Jev falhou. */
+export type Avaliacao = "jev" | "pressa" | "curta" | "resposta" | "falhou";
 
 /** O que o Jev respondeu, em chances de 0 a 1. */
 export interface RespostaJev {

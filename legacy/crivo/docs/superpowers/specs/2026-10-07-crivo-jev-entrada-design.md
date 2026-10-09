@@ -39,6 +39,7 @@ O painel mostra a nota, os critérios e quanto tempo o Jev levou, e ganha uma **
 6. **Transporte até o Jev:** SDK oficial `@typesafe-ai/sdk`, só no servidor, com limite de 8 s e sem nova tentativa.
 7. **Resposta ao Claude Code:** o gancho de prompt troca `-s -o /dev/null` por `curl -sf -m 10`, para a resposta do Crivo virar a saída do gancho. Com o Crivo desligado ou com erro HTTP, o `curl` não imprime nada e o prompt segue.
 8. **Resposta curta:** até **4 palavras** passa direto, sem chamar o Jev, marcada "resposta curta". Assim as respostas de conversa ("sim", "aprovado", "pode continuar") não são barradas.
+9. **Resposta às perguntas do Claude** (decidido depois da revisão final, opção A): se o último prompt da mesma sessão foi amarelo, o Claude recebeu o pedido de perguntar antes; o prompt seguinte é a resposta do usuário e passa sem chamar o Jev, marcado `avaliacao: "resposta"`, verde, saída `{}`. O seguinte a ele volta a ser avaliado. Vermelho não libera nada, porque o prompt barrado nem chegou ao Claude. Sem sessão (área de teste), a regra não vale.
 
 ## Perguntas ao Jev
 
@@ -76,6 +77,7 @@ A decisão segue esta ordem; a primeira regra que vale encerra:
 2. **Até 4 palavras** (separadas por espaços):
    - `avaliacao: "curta"`, verde, nota e critérios nulos;
    - para o Claude Code: `{}`.
+2b. **O último prompt da sessão foi amarelo** (decisão 9): `avaliacao: "resposta"`, verde, nota e critérios nulos; para o Claude Code: `{}`.
 3. **O Jev falhou:**
    - `avaliacao: "falhou"`, verde, nota e critérios nulos, `motivo` preenchido;
    - para o Claude Code: `{}`.

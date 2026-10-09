@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
-import { VERSAO_ESQUEMA, abrirBanco, inserirComando, inserirPrompt, lerFeed, lerPlacar } from "@/lib/db";
+import { VERSAO_ESQUEMA, abrirBanco, claudePerguntou, inserirComando, inserirPrompt, lerFeed, lerPlacar } from "@/lib/db";
 import type { NovoComando, NovoPrompt } from "@/lib/tipos";
 
 const novoPrompt = (extra: Partial<NovoPrompt> = {}): NovoPrompt => ({
@@ -95,6 +95,24 @@ describe("comandos", () => {
   });
 });
 
+describe("claudePerguntou", () => {
+  it("vale só quando o último prompt da sessão foi amarelo avaliado pelo Jev", () => {
+    const db = abrirBanco(":memory:");
+    expect(claudePerguntou(db, "sess-1")).toBe(false);
+    inserirPrompt(db, novoPrompt({ semaforo: "amarelo", avaliacao: "jev", faltando: ["onde"] }));
+    expect(claudePerguntou(db, "sess-1")).toBe(true);
+    expect(claudePerguntou(db, "outra-sessao")).toBe(false);
+    inserirPrompt(db, novoPrompt({ avaliacao: "resposta" }));
+    expect(claudePerguntou(db, "sess-1")).toBe(false);
+  });
+
+  it("vermelho não conta: o prompt barrado nem chegou ao Claude", () => {
+    const db = abrirBanco(":memory:");
+    inserirPrompt(db, novoPrompt({ semaforo: "vermelho", avaliacao: "jev", nota: 20, faltando: ["objetivo", "onde", "pronto"] }));
+    expect(claudePerguntou(db, "sess-1")).toBe(false);
+  });
+});
+
 describe("lerFeed e lerPlacar", () => {
   it("mais novo primeiro, limitado, e o placar conta o banco inteiro", () => {
     const db = abrirBanco(":memory:");
@@ -173,13 +191,39 @@ describe("migração", () => {
     v2.close();
 
     const db = abrirBanco(caminho);
-    expect(db.pragma("user_version", { simple: true })).toBe(3);
+    expect(db.pragma("user_version", { simple: true })).toBe(VERSAO_ESQUEMA);
     const feed = lerFeed(db);
     expect(feed.prompts).toHaveLength(1);
     expect(feed.prompts[0]).toMatchObject({ texto: "prompt da etapa 2", avaliacao: null, duracaoMs: null, faltando: null, motivo: null });
     expect(feed.comandos).toHaveLength(1);
     inserirPrompt(db, novoPrompt({ avaliacao: "jev", faltando: ["objetivo", "mistura"], semaforo: "amarelo" }));
     expect(lerFeed(db).prompts[0].faltando).toEqual(["objetivo", "mistura"]);
+    db.close();
+  });
+
+  it("banco v3 com dados vira v4 sem perder nada e aceita a avaliação 'resposta'", () => {
+    const caminho = arquivoTemporario();
+    const v3 = new Database(caminho);
+    v3.exec(`
+      CREATE TABLE prompts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, texto TEXT NOT NULL, criado_em TEXT NOT NULL, origem TEXT NOT NULL, sessao TEXT,
+        tamanho TEXT CHECK (tamanho IN ('ajuste', 'funcionalidade', 'sistema')),
+        tamanho_pct INTEGER, objetivo_pct INTEGER, onde_pct INTEGER, pronto_pct INTEGER, foco_pct INTEGER, nota INTEGER,
+        semaforo TEXT NOT NULL CHECK (semaforo IN ('verde', 'amarelo', 'vermelho')),
+        avaliacao TEXT CHECK (avaliacao IN ('jev', 'pressa', 'curta', 'falhou')), duracao_ms INTEGER, faltando TEXT, motivo TEXT);
+      CREATE TABLE comandos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, criado_em TEXT NOT NULL, origem TEXT NOT NULL, sessao TEXT,
+        tipo TEXT NOT NULL, alvo TEXT NOT NULL, regra TEXT, semaforo TEXT NOT NULL);
+      INSERT INTO prompts (texto, criado_em, origem, sessao, semaforo, avaliacao, duracao_ms, faltando)
+        VALUES ('prompt da etapa 3', '2026-10-07T10:00:00.000Z', 'happy-team-chat', 's', 'amarelo', 'jev', 900, '["onde"]');
+      PRAGMA user_version = 3;`);
+    v3.close();
+
+    const db = abrirBanco(caminho);
+    expect(db.pragma("user_version", { simple: true })).toBe(VERSAO_ESQUEMA);
+    expect(lerFeed(db).prompts[0]).toMatchObject({ id: 1, texto: "prompt da etapa 3", avaliacao: "jev", duracaoMs: 900, faltando: ["onde"] });
+    inserirPrompt(db, novoPrompt({ avaliacao: "resposta" }));
+    expect(lerFeed(db).prompts.map((p) => p.avaliacao)).toEqual(["resposta", "jev"]);
     db.close();
   });
 });

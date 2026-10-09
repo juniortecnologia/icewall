@@ -51,7 +51,7 @@ export function triagem(texto: string): "pressa" | "curta" | null {
   return null;
 }
 
-function decidirSemJev(tipo: "pressa" | "curta"): Decisao {
+function decidirSemJev(tipo: "pressa" | "curta" | "resposta"): Decisao {
   return {
     semaforo: "verde",
     nota: null,
@@ -106,10 +106,16 @@ export function decidirComJev(r: RespostaJev): Decisao {
   return { semaforo, nota, criterios, faltando, avaliacao: "jev", motivo: null, duracaoMs: r.duracaoMs, saidaGancho };
 }
 
-/** A primeira regra que vale encerra: pressa, resposta curta, falha do Jev, regras do Jev. */
-export async function decidir(texto: string, avaliar: Avaliador): Promise<Decisao> {
+export interface Contexto {
+  /** O último prompt da sessão virou pergunta: este é a resposta do usuário ao Claude. */
+  respondendo: boolean;
+}
+
+/** A primeira regra que vale encerra: pressa, resposta curta, resposta ao Claude, falha do Jev, regras do Jev. */
+export async function decidir(texto: string, avaliar: Avaliador, contexto: Contexto = { respondendo: false }): Promise<Decisao> {
   const tipo = triagem(texto);
   if (tipo) return decidirSemJev(tipo);
+  if (contexto.respondendo) return decidirSemJev("resposta");
   let r: RespostaJev | FalhaJev;
   try {
     r = await avaliar(texto);

@@ -36,6 +36,9 @@ export function DetalheAvaliacao({ dados }: { dados: DadosAvaliacao }) {
     );
   }
   if (avaliacao === "curta") return <p className="text-sm text-apagado">Resposta curta: passou sem avaliação.</p>;
+  if (avaliacao === "resposta") {
+    return <p className="text-sm text-apagado">Resposta às perguntas do Claude: passou sem avaliação.</p>;
+  }
   if (avaliacao === "falhou") {
     return (
       <p className="text-sm" style={{ color: "var(--color-ambar)" }}>

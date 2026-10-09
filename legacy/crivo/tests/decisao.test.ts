@@ -193,3 +193,34 @@ describe("decidir", () => {
     expect(d).toMatchObject({ semaforo: "verde", avaliacao: "falhou", motivo: "erro ao falar com a TypeSafe", saidaGancho: {} });
   });
 });
+
+describe("resposta às perguntas do Claude", () => {
+  const longo = "na tela de login, pronto quando o botão aparecer";
+
+  it("respondendo: passa verde como 'resposta', sem chamar o Jev, em silêncio", async () => {
+    const avaliar = vi.fn();
+    const d = await decidir(longo, avaliar, { respondendo: true });
+    expect(avaliar).not.toHaveBeenCalled();
+    expect(d).toEqual({
+      semaforo: "verde",
+      nota: null,
+      criterios: null,
+      faltando: null,
+      avaliacao: "resposta",
+      motivo: null,
+      duracaoMs: null,
+      saidaGancho: {},
+    });
+  });
+
+  it("a marca de pressa e a resposta curta continuam valendo antes", async () => {
+    expect((await decidir(">> " + longo, vi.fn(), { respondendo: true })).avaliacao).toBe("pressa");
+    expect((await decidir("sim", vi.fn(), { respondendo: true })).avaliacao).toBe("curta");
+  });
+
+  it("sem estar respondendo, o pedido longo vai ao Jev", async () => {
+    const avaliar = vi.fn().mockResolvedValue(resposta());
+    expect((await decidir(longo, avaliar, { respondendo: false })).avaliacao).toBe("jev");
+    expect(avaliar).toHaveBeenCalledOnce();
+  });
+});

@@ -19,12 +19,15 @@ import type {
 
 export type Banco = Database.Database;
 
-/** v1 = etapa 1 (dados de mentira); v2 = dados reais vindos dos hooks; v3 = avaliação do Jev. */
-export const VERSAO_ESQUEMA = 3;
+/**
+ * v1 = etapa 1 (dados de mentira); v2 = dados reais vindos dos hooks; v3 = avaliação do Jev;
+ * v4 = avaliação "resposta" (resposta às perguntas do Claude).
+ */
+export const VERSAO_ESQUEMA = 4;
 
 // CHECK com valor nulo passa: nota e critérios ficam vazios quando o Jev não avalia.
-const ESQUEMA = `
-CREATE TABLE IF NOT EXISTS prompts (
+const tabelaPrompts = (nome: string) => `
+CREATE TABLE IF NOT EXISTS ${nome} (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   texto        TEXT    NOT NULL,
   criado_em    TEXT    NOT NULL,
@@ -38,11 +41,14 @@ CREATE TABLE IF NOT EXISTS prompts (
   foco_pct     INTEGER CHECK (foco_pct     BETWEEN 0 AND 100),
   nota         INTEGER CHECK (nota         BETWEEN 0 AND 100),
   semaforo     TEXT    NOT NULL CHECK (semaforo IN ('verde', 'amarelo', 'vermelho')),
-  avaliacao    TEXT    CHECK (avaliacao IN ('jev', 'pressa', 'curta', 'falhou')),
+  avaliacao    TEXT    CHECK (avaliacao IN ('jev', 'pressa', 'curta', 'falhou', 'resposta')),
   duracao_ms   INTEGER,
   faltando     TEXT,
   motivo       TEXT
 );
+`;
+
+const ESQUEMA = `${tabelaPrompts("prompts")}
 CREATE TABLE IF NOT EXISTS comandos (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   criado_em TEXT NOT NULL,
@@ -55,6 +61,7 @@ CREATE TABLE IF NOT EXISTS comandos (
 );
 CREATE INDEX IF NOT EXISTS prompts_recentes  ON prompts  (criado_em DESC, id DESC);
 CREATE INDEX IF NOT EXISTS comandos_recentes ON comandos (criado_em DESC, id DESC);
+CREATE INDEX IF NOT EXISTS prompts_sessao    ON prompts  (sessao, id DESC);
 `;
 
 /** v2 → v3: as colunas da avaliação, sem tocar nos dados (nulas nos prompts antigos). */
@@ -63,6 +70,16 @@ ALTER TABLE prompts ADD COLUMN avaliacao  TEXT CHECK (avaliacao IN ('jev', 'pres
 ALTER TABLE prompts ADD COLUMN duracao_ms INTEGER;
 ALTER TABLE prompts ADD COLUMN faltando   TEXT;
 ALTER TABLE prompts ADD COLUMN motivo     TEXT;
+`;
+
+const COLUNAS_PROMPTS =
+  "id, texto, criado_em, origem, sessao, tamanho, tamanho_pct, objetivo_pct, onde_pct, pronto_pct, foco_pct, nota, semaforo, avaliacao, duracao_ms, faltando, motivo";
+
+/** v3 → v4: o SQLite não altera um CHECK, então a tabela é refeita com os mesmos dados e ids. */
+const REFAZER_V4 = `${tabelaPrompts("prompts_v4")}
+INSERT INTO prompts_v4 (${COLUNAS_PROMPTS}) SELECT ${COLUNAS_PROMPTS} FROM prompts;
+DROP TABLE prompts;
+ALTER TABLE prompts_v4 RENAME TO prompts;
 `;
 
 interface LinhaPrompt {
@@ -206,9 +223,18 @@ function migrar(db: Banco) {
   db.transaction(() => {
     if (versao < 2) db.exec("DROP TABLE IF EXISTS prompts; DROP TABLE IF EXISTS comandos;");
     if (versao === 2) db.exec(COLUNAS_V3);
+    if (versao >= 2 && versao < 4) db.exec(REFAZER_V4);
     db.exec(ESQUEMA);
     db.pragma(`user_version = ${VERSAO_ESQUEMA}`);
   })();
+}
+
+/** O último prompt da sessão virou pergunta: o Claude recebeu o aviso e vai perguntar antes de começar. */
+export function claudePerguntou(db: Banco, sessao: string): boolean {
+  const ultimo = db
+    .prepare("SELECT semaforo, avaliacao FROM prompts WHERE sessao = ? ORDER BY id DESC LIMIT 1")
+    .get(sessao) as Pick<LinhaPrompt, "semaforo" | "avaliacao"> | undefined;
+  return ultimo?.semaforo === "amarelo" && ultimo.avaliacao === "jev";
 }
 
 /** Abre (ou cria) o banco e garante o esquema atual. */

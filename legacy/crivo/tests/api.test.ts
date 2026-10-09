@@ -97,7 +97,8 @@ describe("o Jev no portão de entrada", () => {
   });
 
   it("amarelo: o Claude recebe o aviso em additionalContext", async () => {
-    const r = await respostaGanchoPrompt(prompt(LONGO), jev({ onde: 0.2 }));
+    // Sessão própria: em sess-1, o prompt seguinte a um amarelo já seria tratado como resposta ao Claude.
+    const r = await respostaGanchoPrompt(post({ ...base, session_id: "sess-amarelo", prompt: LONGO }), jev({ onde: 0.2 }));
     const saida = await r.json();
     expect(saida.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
     expect(saida.hookSpecificOutput.additionalContext).toMatch(/^Aviso do Crivo: neste pedido faltou em que tela/);
@@ -181,5 +182,26 @@ describe("resposta que chega depois de o gancho desistir", () => {
     const f = await feed();
     expect(f.prompts[0]).toMatchObject({ avaliacao: "falhou", semaforo: "verde", nota: null, motivo: "o Crivo demorou mais que o gancho espera e o prompt passou" });
     expect(f.placar.barrados).toBe(antes);
+  });
+});
+
+describe("resposta às perguntas do Claude, no gancho", () => {
+  const naSessao = (sessao: string, texto: string) =>
+    post({ session_id: sessao, cwd: base.cwd, hook_event_name: "UserPromptSubmit", prompt: texto });
+  const bloqueia = jev({ objetivo: 0.1, onde: 0.1, pronto: 0.1 });
+
+  it("depois de um amarelo, a resposta longa da mesma sessão passa sem o Jev; a seguinte volta a ser avaliada", async () => {
+    await respostaGanchoPrompt(naSessao("sess-perguntas", LONGO), jev({ onde: 0.2 }));
+    const r = await respostaGanchoPrompt(naSessao("sess-perguntas", "na tela de relatórios, pronto quando a tabela aparecer"), naoChamar);
+    expect(await r.json()).toEqual({});
+    expect((await feed()).prompts[0]).toMatchObject({ avaliacao: "resposta", semaforo: "verde", sessao: "sess-perguntas" });
+    const depois = await respostaGanchoPrompt(naSessao("sess-perguntas", LONGO), bloqueia);
+    expect((await depois.json()).decision).toBe("block");
+  });
+
+  it("o amarelo de uma sessão não libera outra sessão", async () => {
+    await respostaGanchoPrompt(naSessao("sess-a", LONGO), jev({ onde: 0.2 }));
+    const r = await respostaGanchoPrompt(naSessao("sess-b", LONGO), bloqueia);
+    expect((await r.json()).decision).toBe("block");
   });
 });
