@@ -1,0 +1,9 @@
+{
+  "titulo": "Qwen3.6 atende chat e agente, com prefill fatiado",
+  "descricao": "Como qwen-agente-no-chat, mais --long-prefill-token-threshold 4096: o contexto longo do agente entra em fatias de 4k tokens por passo, para não travar a geração do chat (rodada 8: 6,7 s e 34 tok/s com o agente de ~18k tokens).",
+  "servicos": [
+    { "container": "glis-chat", "script": "serve-chat.sh", "args": ["0.30", "2", "16", "8192", "priority", "4096"] },
+    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.10"] },
+    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.10"] }
+  ]
+}
