@@ -1,0 +1,9 @@
+{
+  "titulo": "Qwen3.6 atende chat e agente (um modelo só)",
+  "descricao": "Sem glis-code: o delegate-local manda os pedidos ao próprio chat, como a 8ª pessoa, com prioridade menor (scheduling-policy priority). Os pesos são lidos uma vez para todos; o chat ganha a memória do agente (0,30).",
+  "servicos": [
+    { "container": "glis-chat", "script": "serve-chat.sh", "args": ["0.30", "2", "16", "8192", "priority"] },
+    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.10"] },
+    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.10"] }
+  ]
+}

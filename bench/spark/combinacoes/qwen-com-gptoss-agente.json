@@ -1,0 +1,10 @@
+{
+  "titulo": "Qwen3.6 no chat + gpt-oss-20b no agente",
+  "descricao": "Troca o Qwen3.8-27B denso por um MoE MXFP4 com 3,6B ativos (~13 GB, Apache 2.0). Agente a 0,18 em vez de 0,30. A contagem de tokens do agente inclui o raciocínio do gpt-oss.",
+  "servicos": [
+    { "container": "glis-code", "script": "serve-gptoss.sh", "args": ["0.18"] },
+    { "container": "glis-chat", "script": "serve-chat.sh", "args": ["0.24", "2", "16"] },
+    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.10"] },
+    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.10"] }
+  ]
+}

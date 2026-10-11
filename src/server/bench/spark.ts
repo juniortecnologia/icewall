@@ -95,6 +95,27 @@ export const CENARIOS = {
     precisa: ["glis-chat", "glis-code", "glis-embed", "glis-rerank"],
     timeoutS: 1200,
   },
+  "convivencia-real-agente-longo": {
+    titulo: "Carga realista + agente com contexto longo (~18k tokens) + imagens em fila + embed/rerank",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300", "--code", "--code-chars", "60000", "--img", "30", "--rag"],
+    precisa: ["glis-chat", "glis-code", "glis-embed", "glis-rerank"],
+    timeoutS: 1200,
+  },
+  "convivencia-real-agente-no-chat": {
+    titulo: "Carga realista + agente no próprio chat (prioridade menor) + imagens em fila + embed/rerank",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300", "--code", "--code-port", "8000", "--code-model", "chat", "--code-priority", "10", "--img", "30", "--rag"],
+    precisa: ["glis-chat", "glis-embed", "glis-rerank"],
+    timeoutS: 1200,
+  },
+  "convivencia-real-agente-no-chat-longo": {
+    titulo: "Carga realista + agente no próprio chat com contexto longo (~18k tokens, prioridade menor) + imagens + embed/rerank",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300", "--code", "--code-port", "8000", "--code-model", "chat", "--code-priority", "10", "--code-chars", "60000", "--img", "30", "--rag"],
+    precisa: ["glis-chat", "glis-embed", "glis-rerank"],
+    timeoutS: 1200,
+  },
   "rag-qualidade": {
     titulo: "Qualidade de RAG em PT-BR: 10 perguntas, 2 armadilhas",
     script: "qual_rag.py",

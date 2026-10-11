@@ -31,6 +31,9 @@ function Veredito({ r }: { r?: ResultadoBancada }) {
 const CONVIVENCIA: [string, string][] = [
   ["convivencia-real", "com agente de código e imagens"],
   ["convivencia-real-gate-img", "com agente e imagens esperando o chat"],
+  ["convivencia-real-agente-longo", "com agente de contexto longo e imagens"],
+  ["convivencia-real-agente-no-chat", "com agente no próprio chat e imagens"],
+  ["convivencia-real-agente-no-chat-longo", "com agente de contexto longo no próprio chat e imagens"],
   ["convivencia-real-sem-codigo", "com imagens"],
   ["convivencia-real-sem-codigo-gate-img", "com imagens esperando o chat"],
 ];

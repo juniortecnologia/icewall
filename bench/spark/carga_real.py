@@ -2,7 +2,10 @@
 # Carga realista do chat: N pessoas ativas, cada uma manda uma pergunta RAG (~6k tokens) a cada MIN–MAX s, em horários
 # sorteados (semente fixa). É o critério do RNF-01; a rajada (bench_oai.py, todos no mesmo segundo) fica como pior caso.
 # Opcional ao fundo: agente de código gerando sem parar, imagens em fila (uma por vez) e embed/rerank.
-# Uso: carga_real.py [--users 7] [--dur 300] [--min 20] [--max 40] [--predict 400] [--code] [--img PAUSA_S] [--gate-img] [--rag]
+# O agente pode ir a outro modelo (--code-port/--code-model; 8000 chat = um modelo só para os dois), levar contexto longo
+# (--code-chars, trecho do PRD) e pedir prioridade menor (--code-priority N; o vLLM precisa de --scheduling-policy priority).
+# Uso: carga_real.py [--users 7] [--dur 300] [--min 20] [--max 40] [--predict 400] [--code] [--code-port 8001] [--code-model code]
+#      [--code-chars 0] [--code-priority N] [--img PAUSA_S] [--gate-img] [--rag]
 import argparse, json, random, re, threading, time, statistics as st, urllib.request
 import bench_oai as b
 
@@ -10,7 +13,9 @@ a = argparse.ArgumentParser()
 a.add_argument("--users", type=int, default=7); a.add_argument("--dur", type=int, default=300)
 a.add_argument("--min", type=float, default=20); a.add_argument("--max", type=float, default=40)
 a.add_argument("--predict", type=int, default=400); a.add_argument("--chars", type=int, default=20000)
-a.add_argument("--code", action="store_true"); a.add_argument("--img", type=float, default=None)
+a.add_argument("--code", action="store_true"); a.add_argument("--code-port", type=int, default=8001)
+a.add_argument("--code-model", default="code"); a.add_argument("--code-chars", type=int, default=0)
+a.add_argument("--code-priority", type=int, default=None); a.add_argument("--img", type=float, default=None)
 a.add_argument("--gate-img", action="store_true"); a.add_argument("--rag", action="store_true")
 a.add_argument("--seed", type=int, default=42)
 a = a.parse_args()
@@ -39,11 +44,17 @@ def pessoa(i):
 
 
 def agente():
+    pedido = "Escreva um programa Python longo que implemente uma fila com testes. Explique cada função."
+    extra = {"priority": a.code_priority} if a.code_priority is not None else None
+    k = 0
     while not stop.is_set():
         t0 = time.time()
+        # contexto longo: um trecho diferente a cada pedido, para o cache de prefixo não esconder o custo
+        texto = f"Contexto do projeto:\n\n{b.prompt(90000 + k, a.code_chars)}\n\n{pedido}" if a.code_chars else pedido
+        k += 1
         try:
-            r = b.chat(8001, "code", "Escreva um programa Python longo que implemente uma fila com testes. Explique cada função.", 400)
-            ag.append((r["out"], time.time() - t0))
+            r = b.chat(a.code_port, a.code_model, texto, 400, extra)
+            ag.append((r["out"], time.time() - t0, r["ttft"]))
         except Exception as e:
             errs.append("agente:" + repr(e)[:100]); stop.wait(2)
 
@@ -94,7 +105,8 @@ out = dict(modo="realista", conc=a.users, duracao_s=round(T), pedidos=len(reqs),
            junto_med=st.median(r["junto"] for r in reqs) if reqs else None, junto_max=pico[0],
            ttft_med=round(st.median(tt), 1) if tt else None, ttft_p95=round(pct(tt, .95), 1) if tt else None, ttft_max=round(max(tt), 1) if tt else None,
            dec_tps_por_req=round(st.median(dec), 1) if dec else None, dec_tps_p10=round(pct(dec, .10), 1) if dec else None)
-if a.code: out.update(agente_pedidos=len(ag), agente_tok_s=round(sum(x[0] for x in ag) / T, 1))
+if a.code: out.update(agente_pedidos=len(ag), agente_tok_s=round(sum(x[0] for x in ag) / T, 1),
+                      agente_ttft_med=round(st.median(x[2] for x in ag), 1) if ag else None)
 if a.img is not None:
     seg = [i["seg"] for i in imgs if i.get("seg")]
     out.update(imagens=len(imgs), imagens_ok=sum(1 for i in imgs if i.get("ok")), img_seg_med=round(st.median(seg), 1) if seg else None,

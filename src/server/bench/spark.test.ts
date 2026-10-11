@@ -96,6 +96,22 @@ describe("cenariosAplicaveis", () => {
     );
   });
 
+  it("agente no próprio chat roda sem glis-code; o de contexto longo no glis-code exige o glis-code", () => {
+    const semCodigo = cenariosAplicaveis(comb(["glis-chat", "glis-embed", "glis-rerank"]), Object.keys(CENARIOS));
+    expect(semCodigo).toEqual(expect.arrayContaining(["convivencia-real-agente-no-chat", "convivencia-real-agente-no-chat-longo"]));
+    expect(semCodigo).not.toContain("convivencia-real-agente-longo");
+    expect(comandoCenario("convivencia-real-agente-no-chat")).toBe(
+      "cd ~/icewall-bench && ./medir.sh python3 'carga_real.py' '--users' '7' '--dur' '300' '--code' '--code-port' '8000' '--code-model' 'chat' '--code-priority' '10' '--img' '30' '--rag'",
+    );
+  });
+
+  it("as combinações dos agentes MoE e do modelo só usam o slot certo", () => {
+    const todas = lerCombinacoes();
+    expect(todas.find((c) => c.id === "qwen-agente-no-chat")?.servicos.map((s) => s.container)).not.toContain("glis-code");
+    expect(todas.find((c) => c.id === "qwen-com-gemma-agente")?.servicos[0]).toMatchObject({ container: "glis-code", script: "serve-gemma.sh" });
+    expect(todas.find((c) => c.id === "qwen-com-gptoss-agente")?.servicos[0]).toMatchObject({ container: "glis-code", script: "serve-gptoss.sh" });
+  });
+
   it("respeita a ordem e a seleção pedidas", () => {
     expect(cenariosAplicaveis(comb(["glis-chat"]), ["imagem", "carga"])).toEqual(["imagem", "carga"]);
   });

@@ -6,9 +6,9 @@ import argparse, json, threading, time, urllib.request, statistics as st, os
 PRD = open(os.path.expanduser("~/glis-bench/PRD.md"), encoding="utf-8").read()
 
 
-def chat(port, model, user, predict):
+def chat(port, model, user, predict, extra=None):
     body = {"model": model, "stream": True, "stream_options": {"include_usage": True}, "max_tokens": predict, "temperature": 0.2,
-            "messages": [{"role": "user", "content": user}], "chat_template_kwargs": {"enable_thinking": False}}
+            "messages": [{"role": "user", "content": user}], "chat_template_kwargs": {"enable_thinking": False}, **(extra or {})}
     req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
     t0 = time.time(); tf = None; usage = {}
     with urllib.request.urlopen(req, timeout=900) as r:
