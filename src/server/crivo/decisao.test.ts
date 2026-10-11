@@ -142,6 +142,10 @@ describe("triagem", () => {
     ["a\n\n b", "curta"],
     ["pode continuar exatamente daqui agora", null],
     ["faz o relatório >> depois", null],
+    ["<task-notification>\n<task-id>b65</task-id>\n<status>completed</status>\n</task-notification>", "notificacao"],
+    ['<agent-message from="ace25">\n[Subagent hand-back] The text below is the final report', "notificacao"],
+    ['<pasted_content id="53a7">\nAgora o Jev entra no portão de entrada e avalia tudo\n</pasted_content>', null],
+    ["olha esse <task-notification> que chegou ontem no terminal", null],
   ] as const)("%j → %s", (texto, esperado) => {
     expect(triagem(texto)).toBe(esperado);
   });
@@ -157,6 +161,13 @@ describe("decidir", () => {
     expect(d).toMatchObject({ semaforo: "verde", avaliacao: "pressa", nota: null, criterios: null, faltando: null });
     expect(d.saidaGancho.hookSpecificOutput?.additionalContext).toBe(MENSAGEM_PRESSA);
     expect(MENSAGEM_PRESSA).toBe('O ">>" no começo do prompt é só a marca de pressa do usuário para o Crivo; ignore.');
+  });
+
+  it("notificação do Claude Code: verde, sem chamar o Jev, saída vazia, mesmo respondendo ao Claude", async () => {
+    const avaliar = vi.fn();
+    const d = await decidir("<task-notification>\n<status>completed</status>\n</task-notification>", avaliar, { respondendo: true });
+    expect(avaliar).not.toHaveBeenCalled();
+    expect(d).toMatchObject({ semaforo: "verde", avaliacao: "notificacao", saidaGancho: {} });
   });
 
   it("resposta curta: verde, sem chamar o Jev, saída vazia", async () => {

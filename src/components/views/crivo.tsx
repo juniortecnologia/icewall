@@ -1,10 +1,11 @@
 "use client";
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, FileText, Terminal } from "lucide-react";
 import { useId, useRef, useState, type ReactNode } from "react";
 import { send, useLive } from "@/lib/api";
 import { ago, clock } from "@/lib/format";
 import { ROTULO_FALTA, mensagemAviso, mensagemBloqueio } from "@/server/crivo/decisao";
-import type { Avaliacao, Comando, Decisao, Feed, Prompt, Semaforo, Tamanho } from "@/server/crivo/tipos";
+import type { Avaliacao, Comando, Decisao, Feed, FonteDescricao, ProjetoCrivo, Prompt, Semaforo, Tamanho } from "@/server/crivo/tipos";
 import { Button, Empty, ErrorNote, Loading, Meter, PageHeader, Panel, Readout, Segmented, Status, type Level } from "../ui";
 
 const ENTRADA: Record<Semaforo, { level: Level; label: string }> = {
@@ -18,8 +19,17 @@ const AVALIACAO: Record<Avaliacao, string> = {
   pressa: "pressa (>>)",
   curta: "resposta curta",
   resposta: "resposta ao Claude",
+  notificacao: "notificação do Claude Code",
   falhou: "não avaliado",
 };
+
+const FONTE: Record<FonteDescricao, string> = {
+  manual: "escrita por você",
+  readme: "do README",
+  pasta: "só o nome da pasta",
+};
+
+const campo = "rounded-md border border-line bg-bg px-2 py-1 text-[12.5px] text-ink outline-none focus-visible:border-ice-dim";
 
 const TAMANHO: Record<Tamanho, string> = { ajuste: "ajuste pequeno", funcionalidade: "funcionalidade", sistema: "sistema inteiro" };
 
@@ -55,6 +65,8 @@ function Detalhe({ d }: { d: Avaliado }) {
   if (d.avaliacao === "pressa") return <p className="text-[13px] text-ink-2">Passou direto: começa com &gt;&gt;, a marca de pressa.</p>;
   if (d.avaliacao === "curta") return <p className="text-[13px] text-ink-2">Resposta curta (até 4 palavras): passou sem chamar a Jev.</p>;
   if (d.avaliacao === "resposta") return <p className="text-[13px] text-ink-2">Resposta às perguntas do Claude: passou sem chamar a Jev.</p>;
+  if (d.avaliacao === "notificacao")
+    return <p className="text-[13px] text-ink-2">Aviso que o próprio Claude Code mandou (comando em segundo plano ou subagente terminou): passou sem chamar a Jev.</p>;
   if (d.avaliacao === "falhou") return <Status level="warning" label={`Não avaliado: ${d.motivo ?? "motivo desconhecido"}. O prompt passou.`} />;
   if (d.avaliacao === null || d.criterios === null) return <p className="text-[13px] text-ink-3">Registrado antes de a Jev avaliar os prompts.</p>;
 
@@ -98,7 +110,12 @@ function Nota({ nota }: { nota: number | null }) {
   );
 }
 
-function ItemPrompt({ p }: { p: Prompt }) {
+/** Nome do projeto no item, só quando a lista mistura projetos. */
+function Origem({ origem }: { origem: string | null }) {
+  return origem ? <span className="text-[12px] text-ink-2">{origem}</span> : null;
+}
+
+function ItemPrompt({ p, mostrarOrigem }: { p: Prompt; mostrarOrigem: boolean }) {
   const [aberto, setAberto] = useState(false);
   const id = useId();
   const e = ENTRADA[p.semaforo];
@@ -114,6 +131,7 @@ function ItemPrompt({ p }: { p: Prompt }) {
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
             <Status level={e.level} label={e.label} />
+            <Origem origem={mostrarOrigem ? p.origem : null} />
             <span className="text-[12px] text-ink-3">{p.avaliacao ? AVALIACAO[p.avaliacao] : "antes da Jev"}</span>
             <time className="tnum text-[12px] text-ink-3" dateTime={new Date(p.ts).toISOString()}>
               {clock(p.ts)}
@@ -131,7 +149,7 @@ function ItemPrompt({ p }: { p: Prompt }) {
   );
 }
 
-function ItemComando({ c }: { c: Comando }) {
+function ItemComando({ c, mostrarOrigem }: { c: Comando; mostrarOrigem: boolean }) {
   // Comandos reais podem ter centenas de linhas (heredocs): fechado mostra 2, aberto rola sozinho.
   const [aberto, setAberto] = useState(false);
   const Icone = c.tipo === "arquivo" ? FileText : Terminal;
@@ -153,6 +171,7 @@ function ItemComando({ c }: { c: Comando }) {
         </code>
         <span className="flex shrink-0 flex-col items-end gap-0.5">
           {c.semaforo === "segurado" ? <Status level="critical" label="segurado" /> : <Status level="good" label="liberado" />}
+          <Origem origem={mostrarOrigem ? c.origem : null} />
           <span className="tnum text-[12px] text-ink-3">{clock(c.ts)}</span>
         </span>
       </button>
@@ -161,8 +180,11 @@ function ItemComando({ c }: { c: Comando }) {
   );
 }
 
-function TestarPrompt({ origem }: { origem: string }) {
+function TestarPrompt({ projetos, inicial }: { projetos: ProjetoCrivo[]; inicial: string | null }) {
   const dialogo = useRef<HTMLDialogElement>(null);
+  const [origem, setOrigem] = useState<string | null>(null);
+  const escolhido = origem ?? inicial ?? projetos[0]?.origem ?? null;
+  const descricao = projetos.find((p) => p.origem === escolhido)?.descricao;
   const [texto, setTexto] = useState("");
   const [resultado, setResultado] = useState<Decisao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -173,7 +195,7 @@ function TestarPrompt({ origem }: { origem: string }) {
     setErro(null);
     setResultado(null);
     try {
-      setResultado(await send<Decisao>("/api/crivo/avaliar", "POST", { texto, origem }));
+      setResultado(await send<Decisao>("/api/crivo/avaliar", "POST", { texto, origem: escolhido }));
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e));
     } finally {
@@ -202,10 +224,32 @@ function TestarPrompt({ origem }: { origem: string }) {
               <h2 id="crivo-teste-titulo" className="text-[15px] font-semibold">
                 Testar um prompt
               </h2>
-              <p className="text-[12.5px] text-ink-3">Mostra o que o Crivo faria no Claude Code de {origem}. Não grava nada.</p>
+              <p className="text-[12.5px] text-ink-3">Mostra o que o Crivo faria no Claude Code do projeto escolhido. Não grava nada.</p>
             </div>
             <Button onClick={() => dialogo.current?.close()}>Fechar</Button>
           </div>
+          {projetos.length > 0 && escolhido && (
+            <label className="block space-y-1">
+              <span className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink-2">
+                Projeto
+                <select
+                  value={escolhido}
+                  onChange={(e) => {
+                    setOrigem(e.target.value);
+                    setResultado(null);
+                  }}
+                  className={campo}
+                >
+                  {projetos.map((p) => (
+                    <option key={p.origem} value={p.origem}>
+                      {p.origem}
+                    </option>
+                  ))}
+                </select>
+              </span>
+              {descricao && <span className="block text-[12px] text-ink-3">A Jev lê: {descricao}</span>}
+            </label>
+          )}
           <label className="block">
             <span className="sr-only">Prompt</span>
             <textarea
@@ -254,23 +298,112 @@ function Sinal({ ts, agora }: { ts: number | null; agora: number }) {
   return <Status level={recente ? "good" : "info"} label={`Último gancho ${ago(ts, agora)}`} />;
 }
 
+function LinhaProjeto({ p, agora }: { p: ProjetoCrivo; agora: number }) {
+  const qc = useQueryClient();
+  const [editando, setEditando] = useState(false);
+  const [rascunho, setRascunho] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
+
+  const mudar = async (mudanca: { descricao?: string | null; desligado?: boolean }) => {
+    setSalvando(true);
+    setErro(null);
+    try {
+      await send("/api/crivo/projetos", "POST", { origem: p.origem, ...mudanca });
+      await qc.invalidateQueries();
+      setEditando(false);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <li className="space-y-2 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="text-[13.5px] font-medium text-ink">{p.origem}</span>
+        {p.desligado ? <Status level="warning" label="Crivo desligado" /> : <Status level="good" label="Crivo ligado" />}
+        <span className="text-[12px] text-ink-3">
+          {p.prompts} {p.prompts === 1 ? "prompt" : "prompts"}, último gancho {ago(p.vistoEm, agora)}
+        </span>
+        <span className="ml-auto flex gap-2">
+          {!editando && (
+            <Button
+              onClick={() => {
+                setRascunho(p.fonte === "manual" ? p.descricao : "");
+                setEditando(true);
+              }}
+            >
+              Editar descrição
+            </Button>
+          )}
+          <Button disabled={salvando} tone={p.desligado ? "primary" : "default"} onClick={() => void mudar({ desligado: !p.desligado })}>
+            {p.desligado ? "Ligar o Crivo" : "Desligar o Crivo"}
+          </Button>
+        </span>
+      </div>
+      {editando ? (
+        <form
+          className="space-y-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void mudar({ descricao: rascunho });
+          }}
+        >
+          <label className="block">
+            <span className="text-[12px] text-ink-3">O que a Jev deve saber deste projeto, em uma ou duas frases</span>
+            <textarea
+              value={rascunho}
+              onChange={(e) => setRascunho(e.target.value)}
+              rows={2}
+              maxLength={300}
+              placeholder={p.fonte === "manual" ? "" : p.descricao}
+              className={`mt-1 block w-full resize-y leading-relaxed ${campo}`}
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <Button tone="primary" type="submit" disabled={salvando || !rascunho.trim()}>
+              Salvar descrição
+            </Button>
+            {p.fonte === "manual" && (
+              <Button disabled={salvando} onClick={() => void mudar({ descricao: null })}>
+                Voltar para a automática
+              </Button>
+            )}
+            <Button onClick={() => setEditando(false)}>Cancelar</Button>
+          </div>
+        </form>
+      ) : (
+        <p className="text-[13px] leading-relaxed text-ink-2 [overflow-wrap:anywhere]">
+          {p.descricao} <span className="text-[12px] text-ink-3">({FONTE[p.fonte]})</span>
+        </p>
+      )}
+      {erro && <ErrorNote>{erro}</ErrorNote>}
+    </li>
+  );
+}
+
 export function CrivoView() {
-  const q = useLive<Feed>("/api/crivo", 2_000);
+  const [origem, setOrigem] = useState<string | null>(null);
+  const q = useLive<Feed>(origem ? `/api/crivo?origem=${encodeURIComponent(origem)}` : "/api/crivo", 2_000, {
+    placeholderData: (anterior) => anterior,
+  });
   const [aba, setAba] = useState<"entrada" | "saida">("entrada");
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <ErrorNote>{String(q.error?.message)}</ErrorNote>;
   const d = q.data;
-  const origem = d.prompts[0]?.origem ?? "happy-team-chat";
+  const todos = origem === null;
 
   return (
     <>
       <PageHeader
         title="Crivo"
-        sub="Os dois portões do Claude Code. Na entrada, a Jev avalia cada prompt antes de o Claude ler: passa, pede para o Claude perguntar antes ou barra. Na saída, cada comando e arquivo fica registrado."
+        sub="Os dois portões do Claude Code, em todos os projetos. Na entrada, a Jev avalia cada prompt antes de o Claude ler: passa, pede para o Claude perguntar antes ou barra. Na saída, cada comando e arquivo fica registrado."
         right={
           <div className="flex flex-wrap items-center gap-3">
             <Sinal ts={d.ultimoSinal} agora={q.dataUpdatedAt} />
-            <TestarPrompt origem={origem} />
+            <TestarPrompt projetos={d.projetos} inicial={origem} />
           </div>
         }
       />
@@ -282,6 +415,18 @@ export function CrivoView() {
           </ErrorNote>
         </div>
       )}
+      <label className="mb-3 flex items-center gap-2 text-[12.5px] text-ink-2">
+        Projeto
+        <select value={origem ?? ""} onChange={(e) => setOrigem(e.target.value || null)} className={campo}>
+          <option value="">Todos os projetos</option>
+          {d.projetos.map((p) => (
+            <option key={p.origem} value={p.origem}>
+              {p.origem}
+              {p.desligado ? " (desligado)" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
       <section className="mb-5 grid grid-cols-2 gap-6 rounded-lg border border-line-soft bg-surface p-5 sm:grid-cols-4">
         <Readout label="Passaram" value={d.placar.passaram} sub="prompts" />
         <Readout label="Perguntar antes" value={d.placar.perguntas} sub="o Claude recebeu aviso" />
@@ -289,6 +434,19 @@ export function CrivoView() {
         <Readout label="Segurados" value={d.placar.segurados} sub="comandos e arquivos" />
       </section>
 
+      <div className="mb-5">
+        <Panel title="Projetos" aside="a Jev julga cada pedido sabendo do que é o projeto" pad={false}>
+          {d.projetos.length ? (
+            <ul className="divide-y divide-line-soft">
+              {d.projetos.map((p) => (
+                <LinhaProjeto key={p.origem} p={p} agora={q.dataUpdatedAt} />
+              ))}
+            </ul>
+          ) : (
+            <Empty>Os projetos aparecem aqui no primeiro gancho de cada um.</Empty>
+          )}
+        </Panel>
+      </div>
       <div className="mb-3 md:hidden">
         <Segmented
           label="Portão"
@@ -306,11 +464,11 @@ export function CrivoView() {
             {d.prompts.length ? (
               <ul className="divide-y divide-line-soft">
                 {d.prompts.map((p) => (
-                  <ItemPrompt key={p.id} p={p} />
+                  <ItemPrompt key={p.id} p={p} mostrarOrigem={todos} />
                 ))}
               </ul>
             ) : (
-              <Empty>Nenhum prompt ainda. Mande um no Claude Code de um projeto com os ganchos do Crivo.</Empty>
+              <Empty>Nenhum prompt ainda. Mande um no Claude Code de qualquer projeto.</Empty>
             )}
           </Panel>
         </div>
@@ -319,7 +477,7 @@ export function CrivoView() {
             {d.comandos.length ? (
               <ul className="divide-y divide-line-soft">
                 {d.comandos.map((c) => (
-                  <ItemComando key={c.id} c={c} />
+                  <ItemComando key={c.id} c={c} mostrarOrigem={todos} />
                 ))}
               </ul>
             ) : (
@@ -332,6 +490,7 @@ export function CrivoView() {
         O que a Jev confere em cada pedido: {Object.values(ROTULO_FALTA).join("; ")}. Faltando 1 ou 2, o Claude pergunta antes de começar; 3 ou mais, o
         prompt é barrado. Comece com &gt;&gt; para passar sem avaliação.
       </p>
+
     </>
   );
 }

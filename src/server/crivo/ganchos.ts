@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { NovoComando, PacotePrompt, TipoAlvo } from "./tipos";
+import type { PacoteFerramenta, PacotePrompt, TipoAlvo } from "./tipos";
 
 // Tradução dos pacotes que os hooks do Claude Code mandam (UserPromptSubmit e PreToolUse).
 
@@ -23,11 +23,11 @@ export function lerGanchoPrompt(corpo: unknown, agora = new Date()): PacotePromp
   const texto = textoCheio(corpo.prompt);
   const cwd = textoCheio(corpo.cwd);
   if (!texto || !cwd) return null;
-  return { texto, ts: agora.getTime(), origem: origemDe(cwd), sessao: textoCheio(corpo.session_id) };
+  return { texto, ts: agora.getTime(), origem: origemDe(cwd), cwd, sessao: textoCheio(corpo.session_id) };
 }
 
 /** `"ignorar"` = ferramenta fora do portão de saída; `null` = pacote inválido. */
-export function lerGanchoFerramenta(corpo: unknown, agora = new Date()): NovoComando | null | "ignorar" {
+export function lerGanchoFerramenta(corpo: unknown, agora = new Date()): PacoteFerramenta | null | "ignorar" {
   if (!ehObjeto(corpo)) return null;
   const ferramenta = textoCheio(corpo.tool_name);
   const cwd = textoCheio(corpo.cwd);
@@ -42,6 +42,7 @@ export function lerGanchoFerramenta(corpo: unknown, agora = new Date()): NovoCom
     regra: null,
     ts: agora.getTime(),
     origem: origemDe(cwd),
+    cwd,
     sessao: textoCheio(corpo.session_id),
   };
 }

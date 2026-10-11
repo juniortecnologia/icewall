@@ -15,7 +15,8 @@ export async function send<T>(url: string, method: "POST" | "PUT" | "PATCH" | "D
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+  // As rotas do Crivo respondem { erro }, as outras { error }.
+  if (!res.ok) throw new Error(data?.error ?? data?.erro ?? `HTTP ${res.status}`);
   return data as T;
 }
 

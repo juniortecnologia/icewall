@@ -52,11 +52,11 @@ Falhas de infraestrutura (códigos 2, 3 e 4 do `ollama-delegate`) não gastam pe
 
 ### Crivo
 
-Os dois portões do Claude Code, vindos do antigo app Crivo:
+Os dois portões do Claude Code, em todos os projetos, vindos do antigo app Crivo:
 - **Entrada:** pelo gancho `UserPromptSubmit`, a Jev avalia cada prompt. O prompt passa, passa com um aviso para o Claude perguntar antes, ou é barrado.
 - **Saída:** pelo gancho `PreToolUse`, cada comando e arquivo é registrado.
 
-Os ganchos chamam `/api/crivo/hooks/*` com o header `x-icewall: 1`, e o prompt sempre passa se o ICEWALL estiver fora. O guia completo, com regras, configuração dos ganchos, rotas e histórico, está em [docs/crivo/README.md](docs/crivo/README.md).
+Os ganchos ficam no `~/.claude/settings.json` (valem para toda sessão do Claude Code) e chamam `/api/crivo/hooks/*` com o header `x-icewall: 1`. O prompt sempre passa se o ICEWALL estiver fora. Cada projeto aparece na aba no primeiro gancho. Lá você filtra por projeto, desliga o Crivo num projeto e ajusta a descrição que a Jev recebe (por padrão, o primeiro parágrafo do README). O guia completo, com regras, configuração dos ganchos, rotas e histórico, está em [docs/crivo/README.md](docs/crivo/README.md).
 
 ### Ações e segurança do painel
 

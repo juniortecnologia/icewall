@@ -243,7 +243,7 @@ export const crivoPrompts = sqliteTable(
     nota: integer("nota"),
     semaforo: text("semaforo", { enum: ["verde", "amarelo", "vermelho"] }).notNull(),
     /** Nulo = registrado antes da avaliação com a Jev (etapa 2 do Crivo). */
-    avaliacao: text("avaliacao", { enum: ["jev", "pressa", "curta", "resposta", "falhou"] }),
+    avaliacao: text("avaliacao", { enum: ["jev", "pressa", "curta", "resposta", "notificacao", "falhou"] }),
     duracaoMs: integer("duracao_ms"),
     faltando: text("faltando", { mode: "json" }).$type<("objetivo" | "onde" | "pronto" | "mistura")[]>(),
     motivo: text("motivo"),
@@ -269,3 +269,14 @@ export const crivoComandos = sqliteTable(
   },
   (t) => [index("crivo_comandos_ts").on(t.ts)],
 );
+
+/** Projetos vistos pelos ganchos (a chave é a última pasta do cwd). Descrição à mão e liga/desliga ficam aqui. */
+export const crivoProjetos = sqliteTable("crivo_projetos", {
+  origem: text("origem").primaryKey(),
+  /** cwd completo do último gancho: é onde o ICEWALL procura o README. */
+  cwd: text("cwd").notNull(),
+  /** Escrita na aba; nulo = automática (README ou nome da pasta). */
+  descricao: text("descricao"),
+  desligado: integer("desligado", { mode: "boolean" }).notNull().default(false),
+  vistoEm: integer("visto_em").notNull(),
+});

@@ -11,6 +11,7 @@ describe("lerGanchoPrompt", () => {
       texto: "corrige o login\nem src/auth",
       ts: agora.getTime(),
       origem: "happy-team-chat",
+      cwd: "/home/junior/Projects/happy-team-chat",
       sessao: "sess-1",
     });
   });
@@ -50,6 +51,7 @@ describe("lerGanchoFerramenta", () => {
       regra: null,
       ts: agora.getTime(),
       origem: "happy-team-chat",
+      cwd: "/home/junior/Projects/happy-team-chat",
       sessao: "sess-1",
     });
   });

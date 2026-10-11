@@ -60,7 +60,26 @@ export interface Placar {
   segurados: number;
 }
 
+/** De onde vem a descrição que a Jev recebe: escrita na aba, tirada do README ou só o nome da pasta. */
+export type FonteDescricao = "manual" | "readme" | "pasta";
+
+export interface ProjetoCrivo {
+  origem: string;
+  /** cwd do último gancho. */
+  cwd: string;
+  /** A descrição que a Jev recebe agora. */
+  descricao: string;
+  fonte: FonteDescricao;
+  /** Desligado: os ganchos respondem {} e não gravam nada. */
+  desligado: boolean;
+  vistoEm: number;
+  prompts: number;
+}
+
 export interface Feed {
+  /** Projeto filtrado; nulo = todos. */
+  origem: string | null;
+  projetos: ProjetoCrivo[];
   prompts: Prompt[];
   comandos: Comando[];
   placar: Placar;
@@ -71,15 +90,20 @@ export interface Feed {
 }
 
 /** O que o gancho UserPromptSubmit traz, antes de qualquer avaliação. */
-export type PacotePrompt = Pick<Prompt, "texto" | "ts" | "origem" | "sessao">;
+export type PacotePrompt = Pick<Prompt, "texto" | "ts" | "origem" | "sessao"> & { cwd: string };
 export type NovoPrompt = Omit<Prompt, "id">;
 export type NovoComando = Omit<Comando, "id" | "semaforo">;
+/** O que o gancho PreToolUse traz: o comando e o cwd completo. */
+export type PacoteFerramenta = NovoComando & { cwd: string };
 
 /** Os critérios que podem faltar num pedido, na ordem em que são listados. */
 export type Criterio = "objetivo" | "onde" | "pronto" | "mistura";
 
-/** Como o prompt foi tratado: pelo Jev, pela marca de pressa, por ser curto, por responder ao Claude, ou o Jev falhou. */
-export type Avaliacao = "jev" | "pressa" | "curta" | "resposta" | "falhou";
+/**
+ * Como o prompt foi tratado: pelo Jev, pela marca de pressa, por ser curto, por responder ao Claude,
+ * por ser notificação do próprio Claude Code, ou o Jev falhou.
+ */
+export type Avaliacao = "jev" | "pressa" | "curta" | "resposta" | "notificacao" | "falhou";
 
 /** O que o Jev respondeu, em chances de 0 a 1. */
 export interface RespostaJev {

@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.0 (2026-10-10)
+
+- **O Crivo vale para todos os projetos:** os ganchos saíram do `.claude/settings.local.json` do happy-team-chat e foram para o `~/.claude/settings.json`.
+  - A aba filtra por projeto e mostra o projeto de cada prompt e comando.
+  - Painel "Projetos": cada projeto aparece no primeiro gancho, e lá dá para desligar o Crivo nele (os ganchos respondem `{}` e não gravam nada).
+  - A descrição que a Jev recebe vem do README do projeto (título e primeiro parágrafo, ignorando README de template). Dá para escrever outra na aba; sem README, vai o nome da pasta.
+  - A área de teste escolhe o projeto e julga com a mesma descrição do gancho.
+  - Nova rota `POST /api/crivo/projetos` e filtro `GET /api/crivo?origem=`.
+- **Notificações do Claude Code:** `<task-notification>` (comando em segundo plano terminou) e `<agent-message` (relatório de subagente) chegam ao gancho como se fossem prompts. Agora passam sem a Jev, como "notificação", e não quebram a regra da resposta ao Claude. Antes, dois relatórios de subagente tinham sido barrados.
+
 ## v1.1.0 (2026-10-10)
 
 - **Aba Crivo:** o Crivo deixou de ser um app separado (`~/Projects/crivo`, porta 4000) e virou uma aba do ICEWALL, com o histórico git das etapas 1–3.

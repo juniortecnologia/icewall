@@ -11,6 +11,11 @@ export const LIMITE_MISTURA = 0.6;
 export const PALAVRAS_RESPOSTA_CURTA = 4;
 /** Prompt que começa com isto passa direto, sem avaliação. */
 export const MARCA_PRESSA = ">>";
+/**
+ * O Claude Code entrega como prompt o fim de um comando em segundo plano e o relatório de um subagente.
+ * Não foram escritos pelo usuário: passam sem a Jev. Texto colado (<pasted_content>) continua sendo avaliado.
+ */
+export const MARCAS_NOTIFICACAO = ["<task-notification>", "<agent-message "];
 
 export const ROTULO_FALTA: Record<Criterio, string> = {
   objetivo: "um objetivo claro (duas pessoas poderiam entender coisas diferentes)",
@@ -44,14 +49,15 @@ const contexto = (texto: string): SaidaGancho => ({
 });
 
 /** As regras que dispensam o Jev. */
-export function triagem(texto: string): "pressa" | "curta" | null {
+export function triagem(texto: string): "notificacao" | "pressa" | "curta" | null {
   const limpo = texto.trim();
+  if (MARCAS_NOTIFICACAO.some((m) => limpo.startsWith(m))) return "notificacao";
   if (limpo.startsWith(MARCA_PRESSA)) return "pressa";
   if (limpo.split(/\s+/).length <= PALAVRAS_RESPOSTA_CURTA) return "curta";
   return null;
 }
 
-function decidirSemJev(tipo: "pressa" | "curta" | "resposta"): Decisao {
+function decidirSemJev(tipo: "notificacao" | "pressa" | "curta" | "resposta"): Decisao {
   return {
     semaforo: "verde",
     nota: null,
@@ -113,7 +119,7 @@ export interface Contexto {
   respondendo: boolean;
 }
 
-/** A primeira regra que vale encerra: pressa, resposta curta, resposta ao Claude, falha do Jev, regras do Jev. */
+/** A primeira regra que vale encerra: notificação, pressa, resposta curta, resposta ao Claude, falha do Jev, regras do Jev. */
 export async function decidir(texto: string, avaliar: Avaliador, contexto: Contexto = { respondendo: false }): Promise<Decisao> {
   const tipo = triagem(texto);
   if (tipo) return decidirSemJev(tipo);

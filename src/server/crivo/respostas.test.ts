@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { MENSAGEM_PRESSA } from "@/server/crivo/decisao";
-import { montarFeed, respostaAvaliar, respostaGanchoFerramenta, respostaGanchoPrompt } from "@/server/crivo/respostas";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { montarFeed, respostaAvaliar, respostaGanchoFerramenta, respostaGanchoPrompt, respostaProjeto } from "@/server/crivo/respostas";
 import type { Avaliador, Decisao, Feed, RespostaJev } from "@/server/crivo/tipos";
 
 // O setup do Vitest dá a este arquivo um banco em memória. Os testes compartilham esse banco e rodam em ordem.
@@ -11,7 +14,7 @@ const post = (corpo: unknown) =>
     headers: { "Content-Type": "application/json", "x-icewall": "1" },
     body: typeof corpo === "string" ? corpo : JSON.stringify(corpo),
   });
-const feed = async (): Promise<Feed> => montarFeed();
+const feed = async (origem: string | null = null): Promise<Feed> => montarFeed(origem);
 const total = (f: Feed) => f.prompts.length + f.comandos.length;
 const base = { session_id: "sess-1", cwd: "/home/junior/Projects/happy-team-chat" };
 const jev = (extra: Partial<RespostaJev> = {}): Avaliador =>
@@ -30,7 +33,7 @@ const jev = (extra: Partial<RespostaJev> = {}): Avaliador =>
 const naoChamar: Avaliador = async () => {
   throw new Error("o Jev não devia ter sido chamado");
 };
-/** O handler recebe uma fábrica por origem; aqui todas as origens usam o mesmo avaliador. */
+/** O handler recebe uma fábrica por descrição do projeto; aqui todas usam o mesmo avaliador. */
 const gancho = (req: Request, avaliar?: Avaliador, limiteMs?: number) =>
   respostaGanchoPrompt(req, avaliar ? () => avaliar : undefined, limiteMs);
 const LONGO = "cria a tela de relatórios de atendimento por período";
@@ -136,8 +139,8 @@ describe("POST /api/crivo/avaliar (área de teste)", () => {
         headers: { "Content-Type": "application/json", "x-icewall": "1" },
         body: typeof corpo === "string" ? corpo : JSON.stringify(corpo),
       }),
-      (origem) => {
-        origens.push(origem);
+      (descricao) => {
+        origens.push(descricao);
         return avaliador;
       },
     );
@@ -155,11 +158,11 @@ describe("POST /api/crivo/avaliar (área de teste)", () => {
     expect(depois.ultimoSinal).toBe(antes.ultimoSinal);
   });
 
-  it("a Jev julga com o projeto pedido pela tela, ou o happy-team-chat", async () => {
-    const origens: string[] = [];
-    await avaliar({ texto: LONGO }, jev(), origens);
-    await avaliar({ texto: LONGO, origem: "ICEWALL" }, jev(), origens);
-    expect(origens).toEqual(["happy-team-chat", "ICEWALL"]);
+  it("a Jev julga com a descrição do projeto pedido pela tela; sem projeto, uma genérica", async () => {
+    const descricoes: string[] = [];
+    await avaliar({ texto: LONGO }, jev(), descricoes);
+    await avaliar({ texto: LONGO, origem: "projeto-que-nunca-mandou-gancho" }, jev(), descricoes);
+    expect(descricoes).toEqual(["um projeto de software", "projeto-que-nunca-mandou-gancho"]);
   });
 
   it("a pressa e a resposta curta também valem aqui", async () => {
@@ -195,13 +198,97 @@ describe("resposta que chega depois de o gancho desistir", () => {
 });
 
 describe("projeto de onde veio o prompt", () => {
-  it("o gancho monta o avaliador com a última pasta do cwd", async () => {
-    const origens: string[] = [];
-    await respostaGanchoPrompt(post({ ...base, session_id: "sess-origem", cwd: "/home/junior/Projects/ICEWALL", prompt: LONGO }), (o) => {
-      origens.push(o);
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), "crivo-projetos-"));
+  const pasta = (nome: string, readme?: string) => {
+    const dir = path.join(raiz, nome);
+    fs.mkdirSync(dir, { recursive: true });
+    if (readme !== undefined) fs.writeFileSync(path.join(dir, "README.md"), readme);
+    return dir;
+  };
+  const descricoesDo = async (cwd: string, sessao: string) => {
+    const descricoes: string[] = [];
+    await respostaGanchoPrompt(post({ session_id: sessao, cwd, prompt: LONGO }), (d) => {
+      descricoes.push(d);
       return jev();
     });
-    expect(origens).toEqual(["ICEWALL"]);
+    return descricoes;
+  };
+  const mudar = (corpo: unknown) =>
+    respostaProjeto(
+      new Request("http://127.0.0.1:4310/api/crivo/projetos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-icewall": "1" },
+        body: JSON.stringify(corpo),
+      }),
+    );
+
+  it("sem README, a Jev recebe o nome da pasta; o projeto entra na lista", async () => {
+    expect(await descricoesDo(pasta("sem-readme"), "sess-p1")).toEqual(["sem-readme"]);
+    expect((await feed()).projetos.find((p) => p.origem === "sem-readme")).toMatchObject({ fonte: "pasta", descricao: "sem-readme", desligado: false, prompts: 1 });
+  });
+
+  it("com README, a Jev recebe o título e o primeiro parágrafo", async () => {
+    const cwd = pasta("com-readme", "# Loja\n\nLoja virtual de discos usados.\n");
+    expect(await descricoesDo(cwd, "sess-p2")).toEqual(["Loja: Loja virtual de discos usados."]);
+  });
+
+  it("a descrição escrita na aba vence o README; null volta para o automático", async () => {
+    const cwd = path.join(raiz, "com-readme");
+    const r = await mudar({ origem: "com-readme", descricao: "  Loja de discos,\n só vinil  " });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ descricao: "Loja de discos, só vinil", fonte: "manual" });
+    expect(await descricoesDo(cwd, "sess-p3")).toEqual(["Loja de discos, só vinil"]);
+    await mudar({ origem: "com-readme", descricao: null });
+    expect(await descricoesDo(cwd, "sess-p4")).toEqual(["Loja: Loja virtual de discos usados."]);
+  });
+
+  it("a área de teste usa a mesma descrição do projeto", async () => {
+    const descricoes: string[] = [];
+    await respostaAvaliar(
+      new Request("http://127.0.0.1:4310/api/crivo/avaliar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-icewall": "1" },
+        body: JSON.stringify({ texto: LONGO, origem: "com-readme" }),
+      }),
+      (d) => {
+        descricoes.push(d);
+        return jev();
+      },
+    );
+    expect(descricoes).toEqual(["Loja: Loja virtual de discos usados."]);
+  });
+
+  it("projeto desligado: os dois ganchos respondem {} sem gravar e sem chamar a Jev", async () => {
+    const cwd = pasta("desligado");
+    await respostaGanchoFerramenta(post({ session_id: "sess-d", cwd, tool_name: "Bash", tool_input: { command: "ls" } }));
+    expect((await mudar({ origem: "desligado", desligado: true })).status).toBe(200);
+    const antes = await feed("desligado");
+    const r = await respostaGanchoPrompt(post({ session_id: "sess-d", cwd, prompt: LONGO }), () => naoChamar);
+    expect(await r.json()).toEqual({});
+    const t = await respostaGanchoFerramenta(post({ session_id: "sess-d", cwd, tool_name: "Bash", tool_input: { command: "rm -rf x" } }));
+    expect(await t.json()).toEqual({});
+    const depois = await feed("desligado");
+    expect(total(depois)).toBe(total(antes));
+    expect(depois.projetos.find((p) => p.origem === "desligado")?.desligado).toBe(true);
+  });
+
+  it("o feed filtra por projeto", async () => {
+    const f = await feed("sem-readme");
+    expect(f.origem).toBe("sem-readme");
+    expect(f.prompts.length).toBeGreaterThan(0);
+    expect(f.prompts.every((p) => p.origem === "sem-readme")).toBe(true);
+    expect(f.comandos.every((c) => c.origem === "sem-readme")).toBe(true);
+    expect(f.placar.passaram).toBe(f.prompts.filter((p) => p.semaforo === "verde").length);
+  });
+
+  it.each([
+    ["sem origem", { descricao: "x" }, 400],
+    ["descrição que não é texto", { origem: "sem-readme", descricao: 5 }, 400],
+    ["descrição longa demais", { origem: "sem-readme", descricao: "x".repeat(301) }, 400],
+    ["desligado que não é booleano", { origem: "sem-readme", desligado: "sim" }, 400],
+    ["projeto que o Crivo nunca viu", { origem: "nunca-visto", desligado: true }, 404],
+  ])("POST /api/crivo/projetos recusa: %s", async (_, corpo, status) => {
+    expect((await mudar(corpo)).status).toBe(status);
   });
 });
 
@@ -217,6 +304,14 @@ describe("resposta às perguntas do Claude, no gancho", () => {
     expect((await feed()).prompts[0]).toMatchObject({ avaliacao: "resposta", semaforo: "verde", sessao: "sess-perguntas" });
     const depois = await gancho(naSessao("sess-perguntas", LONGO), bloqueia);
     expect((await depois.json()).decision).toBe("block");
+  });
+
+  it("uma notificação do Claude Code entre a pergunta e a resposta não quebra a resposta", async () => {
+    await gancho(naSessao("sess-notif", LONGO), jev({ onde: 0.2 }));
+    await gancho(naSessao("sess-notif", "<task-notification>\n<status>completed</status>\n</task-notification>"), naoChamar);
+    expect((await feed()).prompts[0]).toMatchObject({ avaliacao: "notificacao", semaforo: "verde" });
+    await gancho(naSessao("sess-notif", "na tela de relatórios, pronto quando a tabela aparecer"), naoChamar);
+    expect((await feed()).prompts[0]).toMatchObject({ avaliacao: "resposta" });
   });
 
   it("o amarelo de uma sessão não libera outra sessão", async () => {
