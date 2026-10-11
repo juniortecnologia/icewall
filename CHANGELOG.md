@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.1.0 (2026-10-10)
+
+- **Aba Crivo:** o Crivo deixou de ser um app separado (`~/Projects/crivo`, porta 4000) e virou uma aba do ICEWALL, com o histórico git das etapas 1–3.
+  - Portão de entrada com a Jev (passa, pede para o Claude perguntar antes ou barra) e portão de saída que registra comandos e arquivos.
+  - Ganchos em `/api/crivo/hooks/{prompt,tool}`, protegidos pelo header `x-icewall` e pela checagem de origem.
+  - Dados no `icewall.db` (31 prompts e 285 comandos importados do `crivo.db`).
+  - Custo da Jev do Crivo somado no Auditor.
+  - Guia em `docs/crivo/README.md`.
+
 ## v1.0.1 (2026-10-10)
 
 - **Recomendações que não saíam do painel:** "Verificar o Spark agora" (Auditor) relê segurança, updates e SO antes de auditar; antes só refazia as recomendações com o retrato antigo. A coleta de segurança passou de 1 h para 15 min, e o Auditor mostra quando o Spark foi lido.

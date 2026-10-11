@@ -1,6 +1,6 @@
 # ICEWALL
 
-Painel de controle local do DGX Spark (10.0.5.18) e dos modelos que o Claude Code usa pela skill `delegate-local`. Ele mostra a saúde do Spark, os modelos, os containers, o SO e a segurança, as delegações do Claude, o uso de tokens e os benchmarks. A Jev (TypeSafe) atua como auditora.
+Painel de controle local do DGX Spark (10.0.5.18) e dos modelos que o Claude Code usa pela skill `delegate-local`. Ele mostra a saúde do Spark, os modelos, os containers, o SO e a segurança, as delegações do Claude, o uso de tokens e os benchmarks. A Jev (TypeSafe) atua como auditora. A aba Crivo filtra o próprio Claude Code: avalia cada prompt antes de o Claude ler e registra cada comando.
 
 ## Rodar
 
@@ -49,6 +49,14 @@ Falhas de infraestrutura (códigos 2, 3 e 4 do `ollama-delegate`) não gastam pe
 - **Qualidade:** as 7 tarefas de [bench/tasks/](bench/tasks/) rodam no pipeline real (`ollama-delegate run --model M --label bench`, até 3 rodadas de teste). Cada tarefa tem uma solução de referência validada (`npm run bench:validate`). O contexto da T7 é gerado por `node bench/tools/gen-t7.mjs`.
 - **Performance:** carga a frio, tempo até o 1º token e tok/s com prompts de 1k, 8k e 32k tokens. A memória vem do `nvidia-smi` por processo, porque o `/api/ps` subestima o gemma4. A medição segura o lock do delegate-local.
 - **Score:** composto, com pesos ajustáveis na tela. O botão "Aplicar no models.json" troca o modelo de um nível (com backup em `models.json.bak`).
+
+### Crivo
+
+Os dois portões do Claude Code, vindos do antigo app Crivo:
+- **Entrada:** pelo gancho `UserPromptSubmit`, a Jev avalia cada prompt. O prompt passa, passa com um aviso para o Claude perguntar antes, ou é barrado.
+- **Saída:** pelo gancho `PreToolUse`, cada comando e arquivo é registrado.
+
+Os ganchos chamam `/api/crivo/hooks/*` com o header `x-icewall: 1`, e o prompt sempre passa se o ICEWALL estiver fora. O guia completo, com regras, configuração dos ganchos, rotas e histórico, está em [docs/crivo/README.md](docs/crivo/README.md).
 
 ### Ações e segurança do painel
 
