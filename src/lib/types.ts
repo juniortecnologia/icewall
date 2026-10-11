@@ -121,5 +121,9 @@ export interface SecuritySnapshot {
   unattendedEnabled: string;
   ufwActive: string;
   sshdConfig: Record<string, string>;
+  /** O sshd ainda oferece senha? Vem de uma tentativa de login sem chave a partir desta máquina; null se a sonda falhou. */
+  passwordAuth: boolean | null;
+  /** IP desta máquina como o Spark o vê (SSH_CLIENT). */
+  clientIp: string | null;
   findings: SecurityFinding[];
 }

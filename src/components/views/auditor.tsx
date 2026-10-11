@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { auditor } from "@/server/queries";
 import { send, useLive } from "@/lib/api";
-import { compact, dateTime } from "@/lib/format";
+import { ago, compact, dateTime } from "@/lib/format";
 import { Button, Code, Empty, ErrorNote, Jev, yesNo, Loading, PageHeader, Panel, Readout, Segmented, Status, Table, severityLevel } from "../ui";
 
 type A = ReturnType<typeof auditor>;
@@ -41,7 +41,7 @@ export function AuditorView() {
   const runNow = async () => {
     setBusy(true);
     try {
-      await send("/api/jobs/auditor", "POST");
+      await send("/api/jobs/recheck", "POST");
       await qc.invalidateQueries();
     } finally {
       setBusy(false);
@@ -54,9 +54,12 @@ export function AuditorView() {
         title="Auditor"
         sub="A Jev (TypeSafe) julga cada delegação, pacote e porta exposta; o ICEWALL combina esses julgamentos com as métricas e transforma em recomendações. Nada é aplicado sozinho."
         right={
-          <Button tone="primary" onClick={runNow} disabled={busy}>
-            {busy ? "Auditando…" : "Auditar agora"}
-          </Button>
+          <div className="flex items-center gap-3">
+            {d.sparkCheckedAt && <span className="text-[12px] text-ink-3">Spark lido {ago(d.sparkCheckedAt)}</span>}
+            <Button tone="primary" onClick={runNow} disabled={busy}>
+              {busy ? "Verificando…" : "Verificar o Spark agora"}
+            </Button>
+          </div>
         }
       />
       {!d.jev.enabled && (

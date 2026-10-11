@@ -54,7 +54,15 @@ export function SystemView() {
                   ["Updates automáticos", <Status key="uu" level={sec.unattendedActive === "active" ? "good" : "warning"} label={sec.unattendedEnabled || sec.unattendedActive} />],
                   ["Falhas de login SSH (24 h)", `${sec.auth.count}${sec.auth.byIp.length ? ` de ${sec.auth.byIp.slice(0, 3).map((i) => `${i.ip} (${i.count})`).join(", ")}` : ""}`],
                   ["Serviços com falha", sec.failedUnits.length ? sec.failedUnits.map((f) => f.unit).join(", ") : "nenhum"],
-                  ["sshd", Object.entries(sec.sshdConfig).map(([k, v]) => `${k} ${v}`).join(", ") || "padrões do OpenSSH"],
+                  [
+                    "Login SSH por senha",
+                    sec.passwordAuth == null ? (
+                      "sonda sem resposta"
+                    ) : (
+                      <Status key="pwd" level={sec.passwordAuth ? "warning" : "good"} label={sec.passwordAuth ? "aceito" : "recusado"} />
+                    ),
+                  ],
+                  ["sshd (arquivos)", Object.entries(sec.sshdConfig).map(([k, v]) => `${k} ${v}`).join(", ") || "padrões do OpenSSH"],
                 ]}
               />
               <div>

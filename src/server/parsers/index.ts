@@ -317,3 +317,9 @@ export function parseSshAuthFailures(text: string): SshAuthFailures {
   const byIp = [...ipCounts].map(([ip, n]) => ({ ip, count: n })).sort((a, b) => b.count - a.count);
   return { count, byIp, users: [...users] };
 }
+
+/** Métodos que o sshd ainda oferece, lidos de "Permission denied (publickey,password)." no stderr do ssh. */
+export function parseSshAuthMethods(stderr: string): string[] | null {
+  const m = stderr.match(/Permission denied \(([^)]*)\)/);
+  return m ? m[1].split(",").map((s) => s.trim()).filter(Boolean) : null;
+}

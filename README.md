@@ -10,7 +10,7 @@ npm install
 npm run build && npm start   # http://127.0.0.1:4310 (só localhost)
 ```
 
-Desenvolvimento: `npm run dev`. Testes: `npm test`, `npm run typecheck`, `npm run lint`, `npm run bench:validate`.
+Como serviço: veja [Serviço](#serviço-systemd-de-usuário). Desenvolvimento: `npm run dev` (pare o serviço antes, a porta é a mesma). Testes: `npm test`, `npm run typecheck`, `npm run lint`, `npm run bench:validate`.
 
 Pré-requisitos nesta máquina:
 - `ssh spark` sem senha (alias com ControlMaster no `~/.ssh/config`, usuário `facini`).
@@ -27,7 +27,7 @@ Depois de editar código do servidor, reinicie o processo: o agendador sobe uma 
 | Containers, imagens, stats | `ssh spark docker …` | 60 s |
 | Delegações do Claude | `~/.cache/delegate-local/runs.jsonl` | 30 s |
 | Tokens do Claude | `~/.claude/projects/**/*.jsonl` (`message.usage`) | 5 min |
-| Segurança (portas, sshd, ufw, logins) | `ssh spark` | 1 h |
+| Segurança (portas, sshd, ufw, logins) | `ssh spark` + sonda de login sem chave | 15 min |
 | SO, runtimes, updates (apt) | `ssh spark` | 6 h |
 | Auditor Jev + recomendações | API TypeSafe | 5 min |
 
@@ -56,3 +56,13 @@ Falhas de infraestrutura (códigos 2, 3 e 4 do `ollama-delegate`) não gastam pe
 - Rotas que alteram estado exigem o header `x-icewall: 1` e origem local (proteção contra CSRF).
 - As ações seguem uma allowlist: start/stop/restart/logs de container; load/unload/pull/delete de modelo; troca de nível no models.json. Tudo fica em `action_log`.
 - `apt upgrade` e reboot não são executados (o usuário não tem sudo sem senha). O painel mostra o comando.
+
+## Serviço (systemd de usuário)
+
+```bash
+systemctl --user link ~/Projects/ICEWALL/deploy/icewall.service
+systemctl --user enable --now icewall
+journalctl --user -u icewall -f      # logs
+```
+
+Depois de `git pull` ou de mudar código: `npm run build && systemctl --user restart icewall`. O caminho do Node (nvm) está fixo na unidade: ao trocar de versão, edite-a e rode `systemctl --user daemon-reload`.

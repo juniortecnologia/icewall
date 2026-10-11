@@ -3,7 +3,6 @@ import type {
   DockerSnapshot,
   OsSnapshot,
   PortInfo,
-  SecurityFinding,
   SecuritySnapshot,
   UpdatesSnapshot,
 } from "@/lib/types";
@@ -17,7 +16,8 @@ import {
   parseSsListen,
   parseSystemctlFailed,
 } from "../../parsers";
-import { sparkExec } from "../ssh";
+import { containerPorts, KNOWN_PORTS, securityFindings } from "../findings";
+import { sparkAuthMethods, sparkExec } from "../ssh";
 
 const OS_CMD = [
   "echo @@osrel@@; cat /etc/os-release",
@@ -116,74 +116,12 @@ const SECURITY_CMD = [
   "echo @@auth@@; journalctl -u ssh --since '-24h' --no-pager 2>/dev/null | grep -E 'Failed password|Invalid user' | tail -1000",
   "echo @@uu@@; systemctl is-active unattended-upgrades; systemctl is-enabled unattended-upgrades 2>&1 | head -1",
   "echo @@ufw@@; systemctl is-active ufw",
+  "echo @@client@@; echo ${SSH_CLIENT%% *}",
   "echo @@sshd@@; grep -hiE '^[[:space:]]*(PasswordAuthentication|PermitRootLogin|PubkeyAuthentication|KbdInteractiveAuthentication)' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null",
 ].join("; ");
 
-const KNOWN_PORTS: Record<number, string> = { 22: "sshd", 53: "systemd-resolved", 631: "cups" };
-
-/** Associa portas publicadas pelo Docker ("0.0.0.0:11434->11434/tcp") ao nome do container. */
-export function containerPorts(docker: DockerSnapshot | null | undefined): Map<number, string> {
-  const map = new Map<number, string>();
-  for (const c of docker?.containers ?? []) {
-    for (const m of c.ports.matchAll(/:(\d+)->/g)) map.set(Number(m[1]), `container ${c.name}`);
-  }
-  return map;
-}
-
-export function securityFindings(snap: Omit<SecuritySnapshot, "findings">): SecurityFinding[] {
-  const findings: SecurityFinding[] = [];
-  for (const p of snap.ports) {
-    if (p.scope !== "any" || p.port === 22) continue;
-    findings.push({
-      key: `port:${p.port}`,
-      severity: "warn",
-      title: `Porta ${p.port} aberta para a rede (${p.service ?? "serviço desconhecido"})`,
-      detail: `Escuta em ${p.addresses.join(" e ")}. Qualquer máquina da LAN alcança o serviço; confira se ele exige autenticação.`,
-      fix: p.service?.startsWith("container")
-        ? `Publicar só em 127.0.0.1 (docker run -p 127.0.0.1:${p.port}:${p.port}) ou limitar no ufw: sudo ufw allow from <sua-rede> to any port ${p.port}`
-        : `sudo ufw deny ${p.port}/tcp (ou restringir a origem)`,
-    });
-  }
-  const pwd = Object.entries(snap.sshdConfig).find(([k]) => k.toLowerCase() === "passwordauthentication")?.[1];
-  if (!pwd || pwd.toLowerCase() === "yes") {
-    findings.push({
-      key: "sshd:password",
-      severity: "warn",
-      title: "SSH aceita login por senha",
-      detail: "PasswordAuthentication não está desligado (o padrão do OpenSSH é yes). A chave já funciona para o ICEWALL.",
-      fix: "echo 'PasswordAuthentication no' | sudo tee /etc/ssh/sshd_config.d/10-no-password.conf && sudo systemctl reload ssh",
-    });
-  }
-  if (snap.unattendedActive !== "active") {
-    findings.push({
-      key: "unattended",
-      severity: "warn",
-      title: "Updates de segurança automáticos desligados",
-      detail: `unattended-upgrades: ${snap.unattendedEnabled || snap.unattendedActive}.`,
-      fix: "sudo apt install unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades",
-    });
-  }
-  if (snap.ufwActive !== "active") {
-    findings.push({ key: "ufw", severity: "crit", title: "Firewall (ufw) inativo", detail: `ufw: ${snap.ufwActive}`, fix: "sudo ufw enable" });
-  }
-  if (snap.auth.count > 20) {
-    const top = snap.auth.byIp.slice(0, 3).map((i) => `${i.ip} (${i.count})`).join(", ");
-    findings.push({
-      key: "ssh:bruteforce",
-      severity: snap.auth.count > 200 ? "crit" : "warn",
-      title: `${snap.auth.count} falhas de login SSH em 24 h`,
-      detail: `Origens: ${top}. Usuários tentados: ${snap.auth.users.slice(0, 8).join(", ")}.`,
-      fix: "sudo apt install fail2ban",
-    });
-  }
-  for (const u of snap.failedUnits) {
-    findings.push({ key: `unit:${u.unit}`, severity: "warn", title: `Serviço com falha: ${u.unit}`, detail: u.description, fix: `systemctl status ${u.unit}` });
-  }
-  return findings;
-}
-
 export async function collectSecurity(): Promise<void> {
-  const res = await sparkExec(SECURITY_CMD, 30_000);
+  const [res, methods] = await Promise.all([sparkExec(SECURITY_CMD, 30_000), sparkAuthMethods()]);
   if (!res.stdout.includes("@@ss@@")) {
     putSnapshot("security", null, res.stderr.trim() || `ssh saiu com ${res.code}`);
     return;
@@ -210,6 +148,8 @@ export async function collectSecurity(): Promise<void> {
     unattendedEnabled,
     ufwActive: s.ufw ?? "",
     sshdConfig,
+    passwordAuth: methods ? methods.some((m) => m === "password" || m === "keyboard-interactive") : null,
+    clientIp: s.client?.trim() || null,
   };
   const findings = securityFindings(base);
   const prev = getSnapshot<SecuritySnapshot>("security")?.data;

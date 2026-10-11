@@ -321,6 +321,7 @@ export function auditor() {
     .all();
   return {
     jev: { enabled: jevEnabled(), model: JEV_MODEL },
+    sparkCheckedAt: getSnapshot("security")?.ts ?? null,
     totals,
     byKind,
     recommendations: db.select().from(schema.recommendations).orderBy(desc(schema.recommendations.ts)).limit(100).all(),

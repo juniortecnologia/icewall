@@ -44,7 +44,7 @@ const JOBS: { name: string; label: string; intervalMs: number; fn: () => Promise
   { name: "health", label: "Saúde (GPU, memória, CPU, disco)", intervalMs: 15 * S, fn: collectHealth },
   { name: "docker", label: "Containers", intervalMs: 60 * S, fn: collectDocker },
   { name: "delegations", label: "Delegações (runs.jsonl)", intervalMs: 30 * S, fn: ingestDelegateRuns },
-  { name: "security", label: "Segurança", intervalMs: 1 * H, fn: collectSecurity },
+  { name: "security", label: "Segurança", intervalMs: 15 * M, fn: collectSecurity },
   { name: "os", label: "SO e runtimes", intervalMs: 6 * H, fn: collectOs },
   { name: "updates", label: "Updates (apt)", intervalMs: 6 * H, fn: collectUpdates },
   { name: "claude", label: "Tokens do Claude (transcripts)", intervalMs: 5 * M, fn: ingestClaudeUsage },
@@ -57,6 +57,12 @@ const g = globalThis as unknown as { __icewallJobs?: Map<string, JobState> };
 
 export function jobStates(): JobState[] {
   return [...(g.__icewallJobs?.values() ?? [])];
+}
+
+/** "Verificar agora": relê o estado do Spark (que muda quando alguém aplica uma recomendação) e só então audita. */
+export async function recheck(): Promise<void> {
+  await Promise.all([runJob("security"), runJob("updates"), runJob("os")]);
+  await runJob("auditor");
 }
 
 export async function runJob(name: string): Promise<void> {
