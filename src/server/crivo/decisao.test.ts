@@ -7,8 +7,8 @@ import {
   mensagemAviso,
   mensagemBloqueio,
   triagem,
-} from "@/lib/decisao";
-import type { Criterio, RespostaJev, Tamanho } from "@/lib/tipos";
+} from "@/server/crivo/decisao";
+import type { Criterio, RespostaJev, Tamanho } from "@/server/crivo/tipos";
 
 const resposta = (extra: Partial<RespostaJev> = {}): RespostaJev => ({
   ok: true,
@@ -19,6 +19,7 @@ const resposta = (extra: Partial<RespostaJev> = {}): RespostaJev => ({
   pronto: 0.9,
   mistura: 0.1,
   duracaoMs: 1234,
+  tokens: { entrada: 900, saida: 12 },
   ...extra,
 });
 
@@ -182,6 +183,7 @@ describe("decidir", () => {
       avaliacao: "falhou",
       motivo: "TypeSafe indisponível",
       duracaoMs: 300,
+      tokens: null,
       saidaGancho: {},
     });
   });
@@ -191,6 +193,13 @@ describe("decidir", () => {
       throw new Error("boom");
     });
     expect(d).toMatchObject({ semaforo: "verde", avaliacao: "falhou", motivo: "erro ao falar com a TypeSafe", saidaGancho: {} });
+  });
+});
+
+describe("custo da Jev", () => {
+  it("a decisão leva os tokens que a Jev cobrou; sem a Jev, nenhum", async () => {
+    expect(decidirComJev(resposta()).tokens).toEqual({ entrada: 900, saida: 12 });
+    expect((await decidir(">> rápido", vi.fn())).tokens).toBeNull();
   });
 });
 
@@ -209,6 +218,7 @@ describe("resposta às perguntas do Claude", () => {
       avaliacao: "resposta",
       motivo: null,
       duracaoMs: null,
+      tokens: null,
       saidaGancho: {},
     });
   });

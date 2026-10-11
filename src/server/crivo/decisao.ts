@@ -60,6 +60,7 @@ function decidirSemJev(tipo: "pressa" | "curta" | "resposta"): Decisao {
     avaliacao: tipo,
     motivo: null,
     duracaoMs: null,
+    tokens: null,
     saidaGancho: tipo === "pressa" ? contexto(MENSAGEM_PRESSA) : {},
   };
 }
@@ -73,6 +74,7 @@ function decidirFalha(f: FalhaJev): Decisao {
     avaliacao: "falhou",
     motivo: f.motivo,
     duracaoMs: f.duracaoMs,
+    tokens: null,
     saidaGancho: {},
   };
 }
@@ -103,7 +105,7 @@ export function decidirComJev(r: RespostaJev): Decisao {
         ? contexto(mensagemAviso(faltando))
         : {};
 
-  return { semaforo, nota, criterios, faltando, avaliacao: "jev", motivo: null, duracaoMs: r.duracaoMs, saidaGancho };
+  return { semaforo, nota, criterios, faltando, avaliacao: "jev", motivo: null, duracaoMs: r.duracaoMs, tokens: r.tokens, saidaGancho };
 }
 
 export interface Contexto {

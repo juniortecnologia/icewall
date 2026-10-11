@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MAX_CARACTERES_JEV, PROJETO, avaliarComJev } from "@/lib/jev";
+import { MAX_CARACTERES_JEV, avaliarComJev } from "@/server/crivo/jev";
+
+const PROJETO = "happy-team-chat: um chat de WhatsApp para equipes";
 
 const CHAVE = "ts_teste_segredo_123";
 
@@ -40,7 +42,7 @@ afterEach(() => {
 describe("avaliarComJev", () => {
   it("manda o estado e as 5 perguntas numa chamada só e devolve as chances", async () => {
     const { fn, chamadas } = fetchFalso(() => json(respostaApi));
-    const r = await avaliarComJev("cria a tela de relatórios de atendimento", { apiKey: CHAVE, fetch: fn });
+    const r = await avaliarComJev("cria a tela de relatórios de atendimento", { projeto: PROJETO, apiKey: CHAVE, fetch: fn });
 
     expect(fn).toHaveBeenCalledOnce();
     expect(chamadas[0].url).toMatch(/\/v1\/systemone$/);
@@ -51,7 +53,6 @@ describe("avaliarComJev", () => {
     };
     expect(corpo.model).toBe("jev-latest");
     expect(corpo.state).toEqual({ projeto: PROJETO, pedido: "cria a tela de relatórios de atendimento" });
-    expect(PROJETO).toBe("happy-team-chat: um chat de WhatsApp para equipes");
     expect(Object.keys(corpo.questions)).toEqual(["tamanho", "objetivo", "onde", "pronto", "mistura"]);
     expect(corpo.questions.tamanho.type).toBe("choice");
     expect(Object.keys(corpo.questions.tamanho.criteria)).toEqual(["ajuste", "funcionalidade", "sistema"]);
@@ -72,19 +73,20 @@ describe("avaliarComJev", () => {
       pronto: 0.55,
       mistura: 0.1,
       duracaoMs: expect.any(Number),
+      tokens: { entrada: 10, saida: 5 },
     });
   });
 
   it("prompt enorme: o Jev recebe só os primeiros 20.000 caracteres", async () => {
     const { fn, chamadas } = fetchFalso(() => json(respostaApi));
-    await avaliarComJev("x".repeat(25_000), { apiKey: CHAVE, fetch: fn });
+    await avaliarComJev("x".repeat(25_000), { projeto: PROJETO, apiKey: CHAVE, fetch: fn });
     const estado = chamadas[0].corpo.state as { pedido: string };
     expect(estado.pedido).toHaveLength(MAX_CARACTERES_JEV);
   });
 
   it("sem chave: não chama a rede", async () => {
     const { fn } = fetchFalso(() => json(respostaApi));
-    const r = await avaliarComJev("cria a tela de relatórios de atendimento", { apiKey: "   ", fetch: fn });
+    const r = await avaliarComJev("cria a tela de relatórios de atendimento", { projeto: PROJETO, apiKey: "   ", fetch: fn });
     expect(fn).not.toHaveBeenCalled();
     expect(r).toEqual({ ok: false, motivo: "sem chave TypeSafe", duracaoMs: 0 });
   });
@@ -98,7 +100,7 @@ describe("avaliarComJev", () => {
   ])("HTTP %i → %s, sem nova tentativa", async (status, motivo) => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { fn } = fetchFalso(() => json({ error: "x" }, status));
-    const r = await avaliarComJev("cria a tela de relatórios de atendimento", { apiKey: CHAVE, fetch: fn });
+    const r = await avaliarComJev("cria a tela de relatórios de atendimento", { projeto: PROJETO, apiKey: CHAVE, fetch: fn });
     expect(fn).toHaveBeenCalledOnce();
     expect(r).toMatchObject({ ok: false, motivo });
   });
@@ -111,7 +113,7 @@ describe("avaliarComJev", () => {
           init?.signal?.addEventListener("abort", () => rejeitar(init.signal?.reason));
         }),
     );
-    const r = await avaliarComJev("cria a tela de relatórios de atendimento", {
+    const r = await avaliarComJev("cria a tela de relatórios de atendimento", { projeto: PROJETO,
       apiKey: CHAVE,
       fetch: nuncaResponde,
       timeoutMs: 30,
@@ -127,14 +129,14 @@ describe("avaliarComJev", () => {
   ])("resposta fora do formato (%s) vira falha, sem NaN", async (_, answers) => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { fn } = fetchFalso(() => json({ ...respostaApi, answers }));
-    const r = await avaliarComJev("cria a tela de relatórios de atendimento", { apiKey: CHAVE, fetch: fn });
+    const r = await avaliarComJev("cria a tela de relatórios de atendimento", { projeto: PROJETO, apiKey: CHAVE, fetch: fn });
     expect(r).toMatchObject({ ok: false, motivo: "erro ao falar com a TypeSafe" });
   });
 
   it("a chave nunca aparece no log nem na falha", async () => {
     const erro = vi.spyOn(console, "error").mockImplementation(() => {});
     const { fn } = fetchFalso(() => json({ error: "invalid key" }, 401));
-    const r = await avaliarComJev("cria a tela de relatórios de atendimento", { apiKey: CHAVE, fetch: fn });
+    const r = await avaliarComJev("cria a tela de relatórios de atendimento", { projeto: PROJETO, apiKey: CHAVE, fetch: fn });
     expect(erro).toHaveBeenCalled();
     expect(JSON.stringify(erro.mock.calls)).not.toContain(CHAVE);
     expect(JSON.stringify(r)).not.toContain(CHAVE);

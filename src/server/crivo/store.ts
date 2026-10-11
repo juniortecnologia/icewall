@@ -1,165 +1,52 @@
-import fs from "node:fs";
-import path from "node:path";
-import Database from "better-sqlite3";
+import "server-only";
+import { and, desc, eq, max, sql } from "drizzle-orm";
+import { getDb, schema } from "../db/client";
 import { semaforoDoComando } from "./avaliacao";
-import type {
-  Avaliacao,
-  Comando,
-  Criterio,
-  FeedDoBanco,
-  NovoComando,
-  NovoPrompt,
-  Placar,
-  Prompt,
-  Semaforo,
-  SemaforoSaida,
-  Tamanho,
-  TipoAlvo,
-} from "./tipos";
+import type { Comando, Criterios, NovoComando, NovoPrompt, Placar, Prompt } from "./tipos";
 
-export type Banco = Database.Database;
+// Leitura e escrita do Crivo no banco do ICEWALL (tabelas crivo_prompts e crivo_comandos).
 
-/**
- * v1 = etapa 1 (dados de mentira); v2 = dados reais vindos dos hooks; v3 = avaliação do Jev;
- * v4 = avaliação "resposta" (resposta às perguntas do Claude).
- */
-export const VERSAO_ESQUEMA = 4;
+const P = schema.crivoPrompts;
+const C = schema.crivoComandos;
 
-// CHECK com valor nulo passa: nota e critérios ficam vazios quando o Jev não avalia.
-const tabelaPrompts = (nome: string) => `
-CREATE TABLE IF NOT EXISTS ${nome} (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  texto        TEXT    NOT NULL,
-  criado_em    TEXT    NOT NULL,
-  origem       TEXT    NOT NULL,
-  sessao       TEXT,
-  tamanho      TEXT    CHECK (tamanho IN ('ajuste', 'funcionalidade', 'sistema')),
-  tamanho_pct  INTEGER CHECK (tamanho_pct  BETWEEN 0 AND 100),
-  objetivo_pct INTEGER CHECK (objetivo_pct BETWEEN 0 AND 100),
-  onde_pct     INTEGER CHECK (onde_pct     BETWEEN 0 AND 100),
-  pronto_pct   INTEGER CHECK (pronto_pct   BETWEEN 0 AND 100),
-  foco_pct     INTEGER CHECK (foco_pct     BETWEEN 0 AND 100),
-  nota         INTEGER CHECK (nota         BETWEEN 0 AND 100),
-  semaforo     TEXT    NOT NULL CHECK (semaforo IN ('verde', 'amarelo', 'vermelho')),
-  avaliacao    TEXT    CHECK (avaliacao IN ('jev', 'pressa', 'curta', 'falhou', 'resposta')),
-  duracao_ms   INTEGER,
-  faltando     TEXT,
-  motivo       TEXT
-);
-`;
+type LinhaPrompt = typeof P.$inferSelect;
 
-const ESQUEMA = `${tabelaPrompts("prompts")}
-CREATE TABLE IF NOT EXISTS comandos (
-  id        INTEGER PRIMARY KEY AUTOINCREMENT,
-  criado_em TEXT NOT NULL,
-  origem    TEXT NOT NULL,
-  sessao    TEXT,
-  tipo      TEXT NOT NULL CHECK (tipo IN ('comando', 'arquivo')),
-  alvo      TEXT NOT NULL,
-  regra     TEXT,
-  semaforo  TEXT NOT NULL CHECK (semaforo IN ('liberado', 'segurado'))
-);
-CREATE INDEX IF NOT EXISTS prompts_recentes  ON prompts  (criado_em DESC, id DESC);
-CREATE INDEX IF NOT EXISTS comandos_recentes ON comandos (criado_em DESC, id DESC);
-CREATE INDEX IF NOT EXISTS prompts_sessao    ON prompts  (sessao, id DESC);
-`;
-
-/** v2 → v3: as colunas da avaliação, sem tocar nos dados (nulas nos prompts antigos). */
-const COLUNAS_V3 = `
-ALTER TABLE prompts ADD COLUMN avaliacao  TEXT CHECK (avaliacao IN ('jev', 'pressa', 'curta', 'falhou'));
-ALTER TABLE prompts ADD COLUMN duracao_ms INTEGER;
-ALTER TABLE prompts ADD COLUMN faltando   TEXT;
-ALTER TABLE prompts ADD COLUMN motivo     TEXT;
-`;
-
-const COLUNAS_PROMPTS =
-  "id, texto, criado_em, origem, sessao, tamanho, tamanho_pct, objetivo_pct, onde_pct, pronto_pct, foco_pct, nota, semaforo, avaliacao, duracao_ms, faltando, motivo";
-
-/** v3 → v4: o SQLite não altera um CHECK, então a tabela é refeita com os mesmos dados e ids. */
-const REFAZER_V4 = `${tabelaPrompts("prompts_v4")}
-INSERT INTO prompts_v4 (${COLUNAS_PROMPTS}) SELECT ${COLUNAS_PROMPTS} FROM prompts;
-DROP TABLE prompts;
-ALTER TABLE prompts_v4 RENAME TO prompts;
-`;
-
-interface LinhaPrompt {
-  id: number;
-  texto: string;
-  criado_em: string;
-  origem: string;
-  sessao: string | null;
-  tamanho: Tamanho | null;
-  tamanho_pct: number | null;
-  objetivo_pct: number | null;
-  onde_pct: number | null;
-  pronto_pct: number | null;
-  foco_pct: number | null;
-  nota: number | null;
-  semaforo: Semaforo;
-  avaliacao: Avaliacao | null;
-  duracao_ms: number | null;
-  /** Array JSON de Criterio. */
-  faltando: string | null;
-  motivo: string | null;
-}
-
-interface LinhaComando {
-  id: number;
-  criado_em: string;
-  origem: string;
-  sessao: string | null;
-  tipo: TipoAlvo;
-  alvo: string;
-  regra: string | null;
-  semaforo: SemaforoSaida;
-}
-
-const paraPrompt = (l: LinhaPrompt): Prompt => ({
-  id: l.id,
-  texto: l.texto,
-  criadoEm: l.criado_em,
-  origem: l.origem,
-  sessao: l.sessao,
-  criterios:
+function paraPrompt(l: LinhaPrompt): Prompt {
+  const criterios: Criterios | null =
     l.tamanho === null
       ? null
       : {
           tamanho: l.tamanho,
-          tamanhoPct: l.tamanho_pct ?? 0,
-          objetivoPct: l.objetivo_pct ?? 0,
-          ondePct: l.onde_pct ?? 0,
-          prontoPct: l.pronto_pct ?? 0,
-          focoPct: l.foco_pct ?? 0,
-        },
-  nota: l.nota,
-  semaforo: l.semaforo,
-  avaliacao: l.avaliacao,
-  duracaoMs: l.duracao_ms,
-  faltando: l.faltando === null ? null : (JSON.parse(l.faltando) as Criterio[]),
-  motivo: l.motivo,
-});
+          tamanhoPct: l.tamanhoPct ?? 0,
+          objetivoPct: l.objetivoPct ?? 0,
+          ondePct: l.ondePct ?? 0,
+          prontoPct: l.prontoPct ?? 0,
+          focoPct: l.focoPct ?? 0,
+        };
+  return {
+    id: l.id,
+    texto: l.texto,
+    ts: l.ts,
+    origem: l.origem,
+    sessao: l.sessao,
+    criterios,
+    nota: l.nota,
+    semaforo: l.semaforo,
+    avaliacao: l.avaliacao,
+    duracaoMs: l.duracaoMs,
+    faltando: l.faltando ?? null,
+    motivo: l.motivo,
+    tokens: l.jevInputTokens === null ? null : { entrada: l.jevInputTokens, saida: l.jevOutputTokens ?? 0 },
+  };
+}
 
-const paraComando = (l: LinhaComando): Comando => ({
-  id: l.id,
-  criadoEm: l.criado_em,
-  origem: l.origem,
-  sessao: l.sessao,
-  tipo: l.tipo,
-  alvo: l.alvo,
-  regra: l.regra,
-  semaforo: l.semaforo,
-});
-
-export function inserirPrompt(db: Banco, p: NovoPrompt): Prompt {
+export function inserirPrompt(p: NovoPrompt): Prompt {
   const c = p.criterios;
-  const r = db
-    .prepare(
-      `INSERT INTO prompts (texto, criado_em, origem, sessao, tamanho, tamanho_pct, objetivo_pct, onde_pct, pronto_pct, foco_pct, nota, semaforo, avaliacao, duracao_ms, faltando, motivo)
-       VALUES (@texto, @criadoEm, @origem, @sessao, @tamanho, @tamanhoPct, @objetivoPct, @ondePct, @prontoPct, @focoPct, @nota, @semaforo, @avaliacao, @duracaoMs, @faltando, @motivo)`,
-    )
-    .run({
+  const linha = getDb()
+    .insert(P)
+    .values({
+      ts: p.ts,
       texto: p.texto,
-      criadoEm: p.criadoEm,
       origem: p.origem,
       sessao: p.sessao,
       tamanho: c?.tamanho ?? null,
@@ -172,87 +59,78 @@ export function inserirPrompt(db: Banco, p: NovoPrompt): Prompt {
       semaforo: p.semaforo,
       avaliacao: p.avaliacao,
       duracaoMs: p.duracaoMs,
-      faltando: p.faltando === null ? null : JSON.stringify(p.faltando),
+      faltando: p.faltando,
       motivo: p.motivo,
-    });
-  return { ...p, id: Number(r.lastInsertRowid) };
+      jevInputTokens: p.tokens?.entrada ?? null,
+      jevOutputTokens: p.tokens?.saida ?? null,
+    })
+    .returning()
+    .get();
+  return paraPrompt(linha);
 }
 
-export function inserirComando(db: Banco, c: NovoComando): Comando {
-  const semaforo = semaforoDoComando(c.regra);
-  const r = db
-    .prepare(
-      `INSERT INTO comandos (criado_em, origem, sessao, tipo, alvo, regra, semaforo)
-       VALUES (@criadoEm, @origem, @sessao, @tipo, @alvo, @regra, @semaforo)`,
-    )
-    .run({ criadoEm: c.criadoEm, origem: c.origem, sessao: c.sessao, tipo: c.tipo, alvo: c.alvo, regra: c.regra, semaforo });
-  return { ...c, id: Number(r.lastInsertRowid), semaforo };
+export function inserirComando(c: NovoComando): Comando {
+  return getDb()
+    .insert(C)
+    .values({ ...c, semaforo: semaforoDoComando(c.regra) })
+    .returning()
+    .get();
 }
 
-export function lerPlacar(db: Banco): Placar {
-  const linhas = db.prepare("SELECT semaforo, COUNT(*) AS n FROM prompts GROUP BY semaforo").all() as {
-    semaforo: Semaforo;
-    n: number;
-  }[];
-  const conta = (s: Semaforo) => linhas.find((l) => l.semaforo === s)?.n ?? 0;
-  const { n: segurados } = db.prepare("SELECT COUNT(*) AS n FROM comandos WHERE semaforo = 'segurado'").get() as {
-    n: number;
+export function lerPlacar(): Placar {
+  const db = getDb();
+  const p = db
+    .select({
+      passaram: sql<number>`coalesce(sum(${P.semaforo} = 'verde'), 0)`,
+      perguntas: sql<number>`coalesce(sum(${P.semaforo} = 'amarelo'), 0)`,
+      barrados: sql<number>`coalesce(sum(${P.semaforo} = 'vermelho'), 0)`,
+    })
+    .from(P)
+    .get();
+  const c = db.select({ segurados: sql<number>`coalesce(sum(${C.semaforo} = 'segurado'), 0)` }).from(C).get();
+  return { passaram: p?.passaram ?? 0, perguntas: p?.perguntas ?? 0, barrados: p?.barrados ?? 0, segurados: c?.segurados ?? 0 };
+}
+
+/** Mais novos primeiro. */
+export function lerFeed(limite = 50): { prompts: Prompt[]; comandos: Comando[]; placar: Placar } {
+  const db = getDb();
+  return {
+    prompts: db.select().from(P).orderBy(desc(P.ts), desc(P.id)).limit(limite).all().map(paraPrompt),
+    comandos: db.select().from(C).orderBy(desc(C.ts), desc(C.id)).limit(limite).all(),
+    placar: lerPlacar(),
   };
-  return { passaram: conta("verde"), perguntas: conta("amarelo"), barrados: conta("vermelho"), segurados };
 }
 
-export function lerFeed(db: Banco, limite = 50): FeedDoBanco {
-  const prompts = db
-    .prepare("SELECT * FROM prompts ORDER BY criado_em DESC, id DESC LIMIT ?")
-    .all(limite) as LinhaPrompt[];
-  const comandos = db
-    .prepare("SELECT * FROM comandos ORDER BY criado_em DESC, id DESC LIMIT ?")
-    .all(limite) as LinhaComando[];
-  return { prompts: prompts.map(paraPrompt), comandos: comandos.map(paraComando), placar: lerPlacar(db) };
-}
-
-/**
- * Passos explícitos por versão. Só o passo da v1 apaga tabelas, porque a v1 tinha apenas
- * dados de mentira. Daqui em diante, todo passo preserva os dados (ALTER).
- */
-function migrar(db: Banco) {
-  const versao = db.pragma("user_version", { simple: true }) as number;
-  if (versao > VERSAO_ESQUEMA) {
-    throw new Error(`Banco na versão ${versao}, mais nova que a deste Crivo (${VERSAO_ESQUEMA}). Atualize o Crivo.`);
-  }
-  db.transaction(() => {
-    if (versao < 2) db.exec("DROP TABLE IF EXISTS prompts; DROP TABLE IF EXISTS comandos;");
-    if (versao === 2) db.exec(COLUNAS_V3);
-    if (versao >= 2 && versao < 4) db.exec(REFAZER_V4);
-    db.exec(ESQUEMA);
-    db.pragma(`user_version = ${VERSAO_ESQUEMA}`);
-  })();
-}
-
-/** O último prompt da sessão virou pergunta: o Claude recebeu o aviso e vai perguntar antes de começar. */
-export function claudePerguntou(db: Banco, sessao: string): boolean {
-  const ultimo = db
-    .prepare("SELECT semaforo, avaliacao FROM prompts WHERE sessao = ? ORDER BY id DESC LIMIT 1")
-    .get(sessao) as Pick<LinhaPrompt, "semaforo" | "avaliacao"> | undefined;
+/** O último prompt da sessão virou pergunta da Jev (amarelo): o próximo é a resposta do usuário ao Claude. */
+export function claudePerguntou(sessao: string): boolean {
+  const ultimo = getDb()
+    .select({ semaforo: P.semaforo, avaliacao: P.avaliacao })
+    .from(P)
+    .where(eq(P.sessao, sessao))
+    .orderBy(desc(P.id))
+    .limit(1)
+    .get();
   return ultimo?.semaforo === "amarelo" && ultimo.avaliacao === "jev";
 }
 
-/** Abre (ou cria) o banco e garante o esquema atual. */
-export function abrirBanco(caminho: string): Banco {
-  const db = new Database(caminho);
-  db.pragma("journal_mode = WAL");
-  migrar(db);
-  return db;
+/** Último gancho recebido, de qualquer portão. */
+export function ultimoSinal(): number | null {
+  const db = getDb();
+  const p = db.select({ ts: max(P.ts) }).from(P).get()?.ts ?? null;
+  const c = db.select({ ts: max(C.ts) }).from(C).get()?.ts ?? null;
+  return p === null ? c : c === null ? p : Math.max(p, c);
 }
 
-// Uma conexão só por processo; o globalThis sobrevive ao recarregamento do `next dev`.
-const global = globalThis as typeof globalThis & { __crivoBanco?: Banco };
-
-export function banco(): Banco {
-  if (!global.__crivoBanco) {
-    const caminho = process.env.CRIVO_DB ?? path.join(process.cwd(), "data", "crivo.db");
-    if (caminho !== ":memory:") fs.mkdirSync(path.dirname(caminho), { recursive: true });
-    global.__crivoBanco = abrirBanco(caminho);
-  }
-  return global.__crivoBanco;
+/** Custo da Jev no Crivo, para o Auditor. */
+export function custoJev(): { n: number; entrada: number; saida: number } {
+  const r = getDb()
+    .select({
+      n: sql<number>`count(*)`,
+      entrada: sql<number>`coalesce(sum(${P.jevInputTokens}), 0)`,
+      saida: sql<number>`coalesce(sum(${P.jevOutputTokens}), 0)`,
+    })
+    .from(P)
+    .where(and(eq(P.avaliacao, "jev"), sql`${P.jevInputTokens} is not null`))
+    .get();
+  return { n: r?.n ?? 0, entrada: r?.entrada ?? 0, saida: r?.saida ?? 0 };
 }

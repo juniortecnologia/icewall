@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lerGanchoFerramenta, lerGanchoPrompt } from "@/lib/ganchos";
+import { lerGanchoFerramenta, lerGanchoPrompt } from "@/server/crivo/ganchos";
 
 const agora = new Date("2026-10-07T12:00:00.000Z");
 const base = { session_id: "sess-1", cwd: "/home/junior/Projects/happy-team-chat" };
@@ -9,7 +9,7 @@ describe("lerGanchoPrompt", () => {
     const p = lerGanchoPrompt({ ...base, hook_event_name: "UserPromptSubmit", prompt: "corrige o login\nem src/auth" }, agora);
     expect(p).toEqual({
       texto: "corrige o login\nem src/auth",
-      criadoEm: "2026-10-07T12:00:00.000Z",
+      ts: agora.getTime(),
       origem: "happy-team-chat",
       sessao: "sess-1",
     });
@@ -48,7 +48,7 @@ describe("lerGanchoFerramenta", () => {
       tipo,
       alvo,
       regra: null,
-      criadoEm: "2026-10-07T12:00:00.000Z",
+      ts: agora.getTime(),
       origem: "happy-team-chat",
       sessao: "sess-1",
     });

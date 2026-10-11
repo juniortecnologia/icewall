@@ -219,3 +219,53 @@ export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value", { mode: "json" }).notNull(),
 });
+
+// ---------------------------------------------------------------------------------------------
+// Crivo: os dois portões do Claude Code (ganchos UserPromptSubmit e PreToolUse).
+// Vieram do crivo.db v4; os horários passaram de ISO para ms, como o resto do ICEWALL.
+
+/** Portão de entrada: cada prompt, a decisão e as chances da Jev em 0–100. */
+export const crivoPrompts = sqliteTable(
+  "crivo_prompts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    ts: integer("ts").notNull(),
+    texto: text("texto").notNull(),
+    /** Última pasta do cwd do Claude Code. */
+    origem: text("origem").notNull(),
+    sessao: text("sessao"),
+    tamanho: text("tamanho", { enum: ["ajuste", "funcionalidade", "sistema"] }),
+    tamanhoPct: integer("tamanho_pct"),
+    objetivoPct: integer("objetivo_pct"),
+    ondePct: integer("onde_pct"),
+    prontoPct: integer("pronto_pct"),
+    focoPct: integer("foco_pct"),
+    nota: integer("nota"),
+    semaforo: text("semaforo", { enum: ["verde", "amarelo", "vermelho"] }).notNull(),
+    /** Nulo = registrado antes da avaliação com a Jev (etapa 2 do Crivo). */
+    avaliacao: text("avaliacao", { enum: ["jev", "pressa", "curta", "resposta", "falhou"] }),
+    duracaoMs: integer("duracao_ms"),
+    faltando: text("faltando", { mode: "json" }).$type<("objetivo" | "onde" | "pronto" | "mistura")[]>(),
+    motivo: text("motivo"),
+    jevInputTokens: integer("jev_input_tokens"),
+    jevOutputTokens: integer("jev_output_tokens"),
+  },
+  (t) => [index("crivo_prompts_ts").on(t.ts), index("crivo_prompts_sessao").on(t.sessao, t.id)],
+);
+
+/** Portão de saída: cada comando ou arquivo que o Claude vai mexer. */
+export const crivoComandos = sqliteTable(
+  "crivo_comandos",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    ts: integer("ts").notNull(),
+    origem: text("origem").notNull(),
+    sessao: text("sessao"),
+    tipo: text("tipo", { enum: ["comando", "arquivo"] }).notNull(),
+    alvo: text("alvo").notNull(),
+    /** Regra da casa em que bateu; nulo = liberado. */
+    regra: text("regra"),
+    semaforo: text("semaforo", { enum: ["liberado", "segurado"] }).notNull(),
+  },
+  (t) => [index("crivo_comandos_ts").on(t.ts)],
+);

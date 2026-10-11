@@ -15,6 +15,7 @@ import { getDb, schema } from "./db/client";
 import { jevEnabled, JEV_MODEL } from "./jev/client";
 import { answersByKind } from "./jev/recommend";
 import { isSuccess, type AnswerMap } from "./jev/rules";
+import { custoJev } from "./crivo/store";
 import { getSnapshot, recentEvents } from "./lib/store";
 import { jobStates } from "./scheduler";
 
@@ -319,10 +320,18 @@ export function auditor() {
     .from(j)
     .groupBy(j.subjectKind)
     .all();
+  // O Crivo chama a Jev por conta própria (sem cache, no gancho do Claude Code): o custo entra aqui também.
+  const crivo = custoJev();
+  if (crivo.n) byKind.push({ kind: "prompt", n: crivo.n, input: crivo.entrada });
   return {
     jev: { enabled: jevEnabled(), model: JEV_MODEL },
     sparkCheckedAt: getSnapshot("security")?.ts ?? null,
-    totals,
+    totals: totals && {
+      ...totals,
+      calls: (totals.calls ?? 0) + crivo.n,
+      input: (totals.input ?? 0) + crivo.entrada,
+      output: (totals.output ?? 0) + crivo.saida,
+    },
     byKind,
     recommendations: db.select().from(schema.recommendations).orderBy(desc(schema.recommendations.ts)).limit(100).all(),
     judgments: db.select().from(j).orderBy(desc(j.ts)).limit(60).all(),

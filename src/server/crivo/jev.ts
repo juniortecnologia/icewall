@@ -1,10 +1,10 @@
 import { APIError, APITimeoutError, TypeSafeClient, choice, noul, type Fetch } from "@typesafe-ai/sdk";
-import { chaveCarregada } from "./ambiente";
 import type { FalhaJev, RespostaJev, Tamanho } from "./tipos";
 
 // Único ponto do Crivo que fala com a TypeSafe. Só roda no servidor: a chave nunca sai daqui.
+// Cliente próprio, sem o cache do auditor (src/server/jev/client.ts): o gancho espera no máximo
+// 10 s e um prompt repetido deve ser avaliado de novo.
 
-export const PROJETO = "happy-team-chat: um chat de WhatsApp para equipes";
 export const LIMITE_JEV_MS = 8000;
 export const MAX_CARACTERES_JEV = 20_000;
 
@@ -35,8 +35,12 @@ export const PERGUNTAS = {
 const TAMANHOS: readonly Tamanho[] = ["ajuste", "funcionalidade", "sistema"];
 
 export interface OpcoesJev {
+  /** Descrição do projeto (veja projetos.ts). */
+  projeto: string;
   /** Padrão: TYPESAFE_API_KEY. */
   apiKey?: string;
+  /** Padrão: TYPESAFE_DEFAULT_MODEL ou jev-latest, o mesmo do auditor. */
+  modelo?: string;
   /** Para testes sem rede. */
   fetch?: Fetch;
   /** Padrão: LIMITE_JEV_MS. */
@@ -60,22 +64,23 @@ function motivoDoErro(erro: unknown): string {
 }
 
 /** Faz as 5 perguntas numa chamada só. Nunca lança: toda falha vira FalhaJev. */
-export async function avaliarComJev(texto: string, opcoes: OpcoesJev = {}): Promise<RespostaJev | FalhaJev> {
+export async function avaliarComJev(texto: string, opcoes: OpcoesJev): Promise<RespostaJev | FalhaJev> {
   const apiKey = opcoes.apiKey ?? process.env.TYPESAFE_API_KEY;
-  if (!chaveCarregada(apiKey)) return { ok: false, motivo: "sem chave TypeSafe", duracaoMs: 0 };
+  if (!apiKey?.trim()) return { ok: false, motivo: "sem chave TypeSafe", duracaoMs: 0 };
 
   const inicio = performance.now();
   const duracao = () => Math.round(performance.now() - inicio);
   try {
     const cliente = new TypeSafeClient({
       apiKey,
+      defaultModel: opcoes.modelo ?? process.env.TYPESAFE_DEFAULT_MODEL ?? "jev-latest",
       fetch: opcoes.fetch,
       timeout: opcoes.timeoutMs ?? LIMITE_JEV_MS,
       retry: { maxRetries: 0 },
       logLevel: "off",
     });
-    const { answers } = await cliente.systemOne({
-      state: { projeto: PROJETO, pedido: texto.slice(0, MAX_CARACTERES_JEV) },
+    const { answers, usage } = await cliente.systemOne({
+      state: { projeto: opcoes.projeto, pedido: texto.slice(0, MAX_CARACTERES_JEV) },
       questions: PERGUNTAS,
     });
     const tamanho = answers.tamanho.choice;
@@ -94,6 +99,7 @@ export async function avaliarComJev(texto: string, opcoes: OpcoesJev = {}): Prom
       pronto: chance(answers.pronto.noul, "pronto"),
       mistura: chance(answers.mistura.noul, "mistura"),
       duracaoMs: duracao(),
+      tokens: usage ? { entrada: usage.input_tokens, saida: usage.output_tokens } : null,
     };
   } catch (erro) {
     const motivo = motivoDoErro(erro);

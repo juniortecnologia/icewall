@@ -18,7 +18,8 @@ export interface Criterios {
 export interface Prompt {
   id: number;
   texto: string;
-  criadoEm: string;
+  /** Chegada do gancho, em ms. */
+  ts: number;
   /** Nome do projeto de onde veio (última pasta do cwd do Claude Code). */
   origem: string;
   sessao: string | null;
@@ -32,11 +33,18 @@ export interface Prompt {
   faltando: Criterio[] | null;
   /** Por que o Jev não avaliou. */
   motivo: string | null;
+  /** Custo da chamada à Jev; nulo quando ela não foi chamada. */
+  tokens: TokensJev | null;
+}
+
+export interface TokensJev {
+  entrada: number;
+  saida: number;
 }
 
 export interface Comando {
   id: number;
-  criadoEm: string;
+  ts: number;
   origem: string;
   sessao: string | null;
   tipo: TipoAlvo;
@@ -52,22 +60,18 @@ export interface Placar {
   segurados: number;
 }
 
-export interface Conexao {
-  conectado: boolean;
-  ultimoSinal: string | null;
-}
-
 export interface Feed {
   prompts: Prompt[];
   comandos: Comando[];
   placar: Placar;
-  conexao: Conexao;
+  /** Último gancho recebido (prompt ou ferramenta), em ms; nulo se nenhum chegou ainda. */
+  ultimoSinal: number | null;
+  /** A chave da TypeSafe está carregada (o valor nunca sai do servidor). */
+  jevLigada: boolean;
 }
 
-export type FeedDoBanco = Omit<Feed, "conexao">;
-
 /** O que o gancho UserPromptSubmit traz, antes de qualquer avaliação. */
-export type PacotePrompt = Pick<Prompt, "texto" | "criadoEm" | "origem" | "sessao">;
+export type PacotePrompt = Pick<Prompt, "texto" | "ts" | "origem" | "sessao">;
 export type NovoPrompt = Omit<Prompt, "id">;
 export type NovoComando = Omit<Comando, "id" | "semaforo">;
 
@@ -87,6 +91,7 @@ export interface RespostaJev {
   pronto: number;
   mistura: number;
   duracaoMs: number;
+  tokens: TokensJev | null;
 }
 
 /** O Jev não respondeu: o prompt passa como "não avaliado". */
@@ -113,5 +118,6 @@ export interface Decisao {
   avaliacao: Avaliacao;
   motivo: string | null;
   duracaoMs: number | null;
+  tokens: TokensJev | null;
   saidaGancho: SaidaGancho;
 }

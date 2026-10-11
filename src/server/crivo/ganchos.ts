@@ -23,7 +23,7 @@ export function lerGanchoPrompt(corpo: unknown, agora = new Date()): PacotePromp
   const texto = textoCheio(corpo.prompt);
   const cwd = textoCheio(corpo.cwd);
   if (!texto || !cwd) return null;
-  return { texto, criadoEm: agora.toISOString(), origem: origemDe(cwd), sessao: textoCheio(corpo.session_id) };
+  return { texto, ts: agora.getTime(), origem: origemDe(cwd), sessao: textoCheio(corpo.session_id) };
 }
 
 /** `"ignorar"` = ferramenta fora do portão de saída; `null` = pacote inválido. */
@@ -40,7 +40,7 @@ export function lerGanchoFerramenta(corpo: unknown, agora = new Date()): NovoCom
     tipo,
     alvo,
     regra: null,
-    criadoEm: agora.toISOString(),
+    ts: agora.getTime(),
     origem: origemDe(cwd),
     sessao: textoCheio(corpo.session_id),
   };

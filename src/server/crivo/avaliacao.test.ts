@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { limitarPct, semaforoDaNota, semaforoDoComando } from "@/lib/avaliacao";
+import { limitarPct, semaforoDaNota, semaforoDoComando } from "@/server/crivo/avaliacao";
 
 describe("semaforoDaNota", () => {
   it.each([

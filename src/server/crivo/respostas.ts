@@ -1,23 +1,22 @@
-import { lerConexao, registrarSinal } from "./conexao";
-import { banco, claudePerguntou, inserirComando, inserirPrompt, lerFeed } from "./db";
+import "server-only";
 import { decidir } from "./decisao";
 import { lerGanchoFerramenta, lerGanchoPrompt } from "./ganchos";
 import { avaliarComJev } from "./jev";
+import { descricaoDoProjeto } from "./projetos";
+import { claudePerguntou, inserirComando, inserirPrompt, lerFeed, ultimoSinal } from "./store";
 import type { Avaliador, Decisao, Feed } from "./tipos";
 
-/** O que a tela recebe: banco + estado da conexão com o projeto. */
-export function montarFeed(): Feed {
-  return { ...lerFeed(banco()), conexao: lerConexao() };
-}
+/** Monta o avaliador da Jev com a descrição do projeto de onde veio o prompt. Os testes injetam outro. */
+export type FabricaAvaliador = (origem: string) => Avaliador;
 
-/** Corpo do GET /api/feed. */
-export function respostaFeed(): Response {
-  try {
-    return Response.json(montarFeed());
-  } catch (erro) {
-    console.error("[crivo] falha ao ler o feed", erro);
-    return Response.json({ erro: "Não foi possível ler o feed." }, { status: 500 });
-  }
+export const avaliadorJev: FabricaAvaliador = (origem) => (texto) => avaliarComJev(texto, { projeto: descricaoDoProjeto(origem) });
+
+/** Projeto usado na área de teste quando a tela não diz outro. */
+export const ORIGEM_PADRAO = "happy-team-chat";
+
+/** O que a aba Crivo recebe (GET /api/crivo). */
+export function montarFeed(): Feed {
+  return { ...lerFeed(), ultimoSinal: ultimoSinal(), jevLigada: Boolean(process.env.TYPESAFE_API_KEY?.trim()) };
 }
 
 async function lerCorpo(req: Request): Promise<unknown> {
@@ -26,6 +25,12 @@ async function lerCorpo(req: Request): Promise<unknown> {
   } catch {
     return undefined;
   }
+}
+
+function campoTexto(corpo: unknown, nome: string): string | null {
+  if (typeof corpo !== "object" || corpo === null) return null;
+  const valor = (corpo as Record<string, unknown>)[nome];
+  return typeof valor === "string" && valor.trim() ? valor : null;
 }
 
 function recusar(motivo: string): Response {
@@ -39,7 +44,7 @@ function recusar(motivo: string): Response {
 function respondendo(sessao: string | null): boolean {
   if (sessao === null) return false;
   try {
-    return claudePerguntou(banco(), sessao);
+    return claudePerguntou(sessao);
   } catch (erro) {
     console.error("[crivo] falha ao ler o último prompt da sessão", erro);
     return false;
@@ -49,6 +54,7 @@ function respondendo(sessao: string | null): boolean {
 /** O gancho usa `curl -m 10`: resposta mais lenta que isto o Claude Code já não lê. */
 export const LIMITE_GANCHO_MS = 9000;
 
+// Os tokens ficam: a Jev respondeu e cobrou, mesmo que tarde.
 const DESISTIU: Pick<Decisao, "semaforo" | "nota" | "criterios" | "faltando" | "avaliacao" | "motivo" | "saidaGancho"> = {
   semaforo: "verde",
   nota: null,
@@ -59,21 +65,21 @@ const DESISTIU: Pick<Decisao, "semaforo" | "nota" | "criterios" | "faltando" | "
   saidaGancho: {},
 };
 
-/** Corpo do POST /api/ganchos/prompt (UserPromptSubmit). */
+/** Corpo do POST /api/crivo/hooks/prompt (UserPromptSubmit). */
 export async function respostaGanchoPrompt(
   req: Request,
-  avaliar: Avaliador = avaliarComJev,
+  avaliadorPara: FabricaAvaliador = avaliadorJev,
   limiteMs = LIMITE_GANCHO_MS,
 ): Promise<Response> {
   const chegada = performance.now();
   const pacote = lerGanchoPrompt(await lerCorpo(req));
   if (!pacote) return recusar("pacote de prompt inválido");
-  const decidido = await decidir(pacote.texto, avaliar, { respondendo: respondendo(pacote.sessao) });
+  const decidido = await decidir(pacote.texto, avaliadorPara(pacote.origem), { respondendo: respondendo(pacote.sessao) });
   // Se o curl já desistiu, o prompt passou: gravar a cor do Jev mentiria no painel.
   const atrasou = req.signal.aborted || performance.now() - chegada > limiteMs;
   const d: Decisao = atrasou ? { ...decidido, ...DESISTIU } : decidido;
   try {
-    inserirPrompt(banco(), {
+    inserirPrompt({
       ...pacote,
       criterios: d.criterios,
       nota: d.nota,
@@ -82,8 +88,8 @@ export async function respostaGanchoPrompt(
       duracaoMs: d.duracaoMs,
       faltando: d.faltando,
       motivo: d.motivo,
+      tokens: d.tokens,
     });
-    registrarSinal("prompt", pacote.criadoEm);
     return Response.json(d.saidaGancho);
   } catch (erro) {
     // Sem registro não há bloqueio: o 500 faz o curl -f calar e o prompt segue.
@@ -92,25 +98,21 @@ export async function respostaGanchoPrompt(
   }
 }
 
-/** Corpo do POST /api/avaliar: a área de teste. Não grava e não acende o "conectado". */
-export async function respostaAvaliar(req: Request, avaliar: Avaliador = avaliarComJev): Promise<Response> {
+/** Corpo do POST /api/crivo/avaliar: a área de teste. Não grava nada. */
+export async function respostaAvaliar(req: Request, avaliadorPara: FabricaAvaliador = avaliadorJev): Promise<Response> {
   const corpo = await lerCorpo(req);
-  const texto =
-    typeof corpo === "object" && corpo !== null && "texto" in corpo && typeof corpo.texto === "string" && corpo.texto.trim()
-      ? corpo.texto
-      : null;
+  const texto = campoTexto(corpo, "texto");
   if (!texto) return Response.json({ erro: "Escreva um prompt para avaliar." }, { status: 400 });
-  return Response.json(await decidir(texto, avaliar));
+  return Response.json(await decidir(texto, avaliadorPara(campoTexto(corpo, "origem") ?? ORIGEM_PADRAO)));
 }
 
-/** Corpo do POST /api/ganchos/ferramenta (PreToolUse). */
+/** Corpo do POST /api/crivo/hooks/tool (PreToolUse). */
 export async function respostaGanchoFerramenta(req: Request): Promise<Response> {
   const novo = lerGanchoFerramenta(await lerCorpo(req));
   if (novo === "ignorar") return Response.json({});
   if (!novo) return recusar("pacote de ferramenta inválido");
   try {
-    inserirComando(banco(), novo);
-    registrarSinal("ferramenta", novo.criadoEm);
+    inserirComando(novo);
     return Response.json({});
   } catch (erro) {
     console.error("[crivo] falha ao registrar o comando", erro);

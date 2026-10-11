@@ -10,7 +10,7 @@ type A = ReturnType<typeof auditor>;
 type AnswerJson = Record<string, { type: string; choice?: string; noul?: number; score?: number; confidence?: number }>;
 
 const AREA: Record<string, string> = { delegation: "Delegação", models: "Modelos", os: "Sistema", security: "Segurança", tokens: "Tokens", containers: "Containers" };
-const KIND: Record<string, string> = { delegation: "delegação", package: "pacote", port: "porta" };
+const KIND: Record<string, string> = { delegation: "delegação", package: "pacote", port: "porta", prompt: "prompt (Crivo)" };
 
 function Answers({ answers }: { answers: unknown }) {
   const a = (answers ?? {}) as AnswerJson;
