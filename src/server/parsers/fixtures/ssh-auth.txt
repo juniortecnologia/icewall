@@ -1,0 +1,8 @@
+Oct 09 11:18:51 spark-facini sshd[823888]: Invalid user junior from 10.0.5.8 port 54246
+Oct 10 21:40:35 spark-facini sshd[1914696]: Invalid user junior from 172.16.1.89 port 41542
+Oct 10 21:45:13 spark-facini sshd[1914710]: Invalid user junior from 172.16.1.89 port 54784
+Oct 10 21:45:13 spark-facini sshd[1914712]: Invalid user junior from 172.16.1.89 port 54790
+Oct 10 21:45:13 spark-facini sshd[1914714]: Invalid user junior from 172.16.1.89 port 54802
+Oct 10 21:45:17 spark-facini sshd[1914714]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=172.16.1.89
+Oct 10 21:45:20 spark-facini sshd[1914714]: Failed password for invalid user junior from 172.16.1.89 port 54802 ssh2
+Oct 10 21:47:12 spark-facini sshd[1915109]: Invalid user junior from 172.16.1.89 port 33128

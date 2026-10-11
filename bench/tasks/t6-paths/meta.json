@@ -1,0 +1,8 @@
+{
+  "id": "t6-paths",
+  "title": "T6 get/set/unset por caminho",
+  "description": "Acesso profundo a objetos por caminho em string ou array, criando arrays ou objetos conforme a próxima chave, e remoção com splice em arrays.",
+  "context": ["test/paths.test.js"],
+  "test": "test/*.test.js",
+  "singleFile": "src/paths.js"
+}

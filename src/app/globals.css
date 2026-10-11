@@ -1,26 +1,115 @@
 @import "tailwindcss";
 
+/* ICEWALL: painel escuro de operador. Gelo = o que é medido; aurora = o que a Jev julga. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --bg: #0c141f;
+  --surface: #131d2b;
+  --surface-2: #1a2738;
+  --surface-3: #22324a;
+  --line: #263a52;
+  --line-soft: #1d2d42;
+  --ink: #e3eef6;
+  --ink-2: #9db2c6;
+  --ink-3: #6b8199;
+  --ice: #8fdcf5;
+  --ice-dim: #3b6f86;
+  --aurora: #a99cff;
+  --aurora-dim: #4a4380;
+  /* status: fixos, sempre com ícone + rótulo */
+  --good: #2fbf71;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #e5484d;
+  /* categórico (dados de vários modelos), validado sobre --surface */
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --s5: #d55181;
+  --s6: #9085e9;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ice: var(--ice);
+  --color-ice-dim: var(--ice-dim);
+  --color-aurora: var(--aurora);
+  --color-aurora-dim: var(--aurora-dim);
+  --color-good: var(--good);
+  --color-warning: var(--warning);
+  --color-serious: var(--serious);
+  --color-critical: var(--critical);
+  --font-sans: var(--font-archivo);
+  --font-mono: var(--font-jetbrains);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-archivo), system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Leituras de instrumento: Archivo expandida, numerais tabulares. */
+.readout {
+  font-stretch: 125%;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.wide {
+  font-stretch: 112%;
+}
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ice);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--ice-dim);
+}
+
+/* Pulso só no indicador "ao vivo"; respeita quem pediu menos movimento. */
+@keyframes live {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.live-dot {
+  animation: live 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+}
+
+/* Barra de rolagem discreta nas tabelas largas */
+.scroll-x {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }

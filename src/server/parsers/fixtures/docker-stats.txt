@@ -1,0 +1,2 @@
+{"BlockIO":"951GB / 33.7GB","CPUPerc":"0.00%","Container":"2ed9b624f4efa012f7b41ab86ce4a520ec162308267d73fc29ae575c03689bb9","ID":"2ed9b624f4ef","MemPerc":"0.17%","MemUsage":"212.6MiB / 121.7GiB","Name":"ollama","NetIO":"33.9GB / 529MB","PIDs":"27"}
+{"BlockIO":"121GB / 8.09GB","CPUPerc":"0.13%","Container":"1028d6951aa8bcb946cb23b7bcda2486591f5d84ce853f40e7700fb060f6b80b","ID":"1028d6951aa8","MemPerc":"0.59%","MemUsage":"741.2MiB / 121.7GiB","Name":"comfyui","NetIO":"20.5MB / 50.6MB","PIDs":"118"}

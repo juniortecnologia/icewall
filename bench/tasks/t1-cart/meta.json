@@ -1,0 +1,8 @@
+{
+  "id": "t1-cart",
+  "title": "T1 carrinho e cupons",
+  "description": "Regras de negócio em várias etapas lendo dois módulos de contexto (catálogo e cupons): desconto por volume, cupons percentuais/fixos, validade, mínimo, avisos e erros.",
+  "context": ["src/catalog.js", "src/coupons.js", "test/cart.test.js"],
+  "test": "test/*.test.js",
+  "singleFile": "src/cart.js"
+}

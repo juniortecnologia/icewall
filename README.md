@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ICEWALL
 
-## Getting Started
+Painel de controle local do DGX Spark (10.0.5.18) e dos modelos que o Claude Code usa pela skill `delegate-local`. Ele mostra a saúde do Spark, os modelos, os containers, o SO e a segurança, as delegações do Claude, o uso de tokens e os benchmarks. A Jev (TypeSafe) atua como auditora.
 
-First, run the development server:
+## Rodar
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local   # preencha TYPESAFE_API_KEY
+npm install
+npm run build && npm start   # http://127.0.0.1:4310 (só localhost)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Desenvolvimento: `npm run dev`. Testes: `npm test`, `npm run typecheck`, `npm run lint`, `npm run bench:validate`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Pré-requisitos nesta máquina:
+- `ssh spark` sem senha (alias com ControlMaster no `~/.ssh/config`, usuário `facini`).
+- A skill `~/.claude/skills/delegate-local` com o registro em `runs.jsonl`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Depois de editar código do servidor, reinicie o processo: o agendador sobe uma vez por processo e não recebe hot-reload.
 
-## Learn More
+## Como funciona
 
-To learn more about Next.js, take a look at the following resources:
+| Fonte | Como chega | Intervalo |
+|---|---|---|
+| GPU, memória unificada, CPU, disco | `ssh spark` (nvidia-smi, /proc) | 15 s |
+| Modelos carregados/instalados | HTTP no Ollama `:11434` | 30 s |
+| Containers, imagens, stats | `ssh spark docker …` | 60 s |
+| Delegações do Claude | `~/.cache/delegate-local/runs.jsonl` | 30 s |
+| Tokens do Claude | `~/.claude/projects/**/*.jsonl` (`message.usage`) | 5 min |
+| Segurança (portas, sshd, ufw, logins) | `ssh spark` | 1 h |
+| SO, runtimes, updates (apt) | `ssh spark` | 6 h |
+| Auditor Jev + recomendações | API TypeSafe | 5 min |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Tudo fica em SQLite (`data/icewall.db`, Drizzle). O agendador está em [src/server/scheduler.ts](src/server/scheduler.ts), e os comandos SSH são constantes dos coletores em [src/server/spark/collectors/](src/server/spark/collectors/).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Auditor (Jev)
 
-## Deploy on Vercel
+A Jev devolve julgamentos tipados (choice/noul/score com probabilidades), não texto. O ICEWALL pergunta e o código decide:
+- **Delegação:** causa da falha, tipo de tarefa, melhor rota (fast/quality/Claude direto), se delegar valeu a pena e o gargalo.
+- **Pacote com update:** gravidade, se mexe na pilha da GPU e se exige restart.
+- **Porta aberta para a rede:** se a exposição é arriscada.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+As regras em [src/server/jev/rules.ts](src/server/jev/rules.ts) agregam esses julgamentos e geram as recomendações. Um julgamento só conta com confiança ≥ 0,6 (choice) ou com probabilidade fora de 0,35–0,65 (noul). Cada julgamento fica em cache pelo hash de estado + perguntas, e o custo em tokens aparece na tela Auditor. Antes de sair para a API, o estado passa por um filtro que remove o que parece credencial.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Falhas de infraestrutura (códigos 2, 3 e 4 do `ollama-delegate`) não gastam pergunta: a causa já é conhecida pelo código.
+
+### Benchmarks
+
+- **Qualidade:** as 7 tarefas de [bench/tasks/](bench/tasks/) rodam no pipeline real (`ollama-delegate run --model M --label bench`, até 3 rodadas de teste). Cada tarefa tem uma solução de referência validada (`npm run bench:validate`). O contexto da T7 é gerado por `node bench/tools/gen-t7.mjs`.
+- **Performance:** carga a frio, tempo até o 1º token e tok/s com prompts de 1k, 8k e 32k tokens. A memória vem do `nvidia-smi` por processo, porque o `/api/ps` subestima o gemma4. A medição segura o lock do delegate-local.
+- **Score:** composto, com pesos ajustáveis na tela. O botão "Aplicar no models.json" troca o modelo de um nível (com backup em `models.json.bak`).
+
+### Ações e segurança do painel
+
+- O servidor escuta só em `127.0.0.1`.
+- Rotas que alteram estado exigem o header `x-icewall: 1` e origem local (proteção contra CSRF).
+- As ações seguem uma allowlist: start/stop/restart/logs de container; load/unload/pull/delete de modelo; troca de nível no models.json. Tudo fica em `action_log`.
+- `apt upgrade` e reboot não são executados (o usuário não tem sudo sem senha). O painel mostra o comando.

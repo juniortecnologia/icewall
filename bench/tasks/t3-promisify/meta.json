@@ -1,0 +1,7 @@
+{
+  "id": "t3-promisify",
+  "title": "T3 callbacks para promises",
+  "description": "Saída em dois arquivos: adaptar uma API de callbacks (erro primeiro) para promises, com leitura em lote e retry seletivo.",
+  "context": ["src/legacy-store.js", "test/store.test.js"],
+  "test": "test/*.test.js"
+}

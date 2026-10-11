@@ -1,0 +1,8 @@
+{
+  "id": "t4-lru-ttl",
+  "title": "T4 cache LRU com TTL",
+  "description": "Estrutura de dados com estado: ordem de uso, expiração por relógio injetado e despejo quando passa do limite.",
+  "context": ["test/lru.test.js"],
+  "test": "test/*.test.js",
+  "singleFile": "src/lru.js"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "t2-recurrence",
+  "title": "T2 recorrência de datas",
+  "description": "Aritmética de datas em UTC com intervalos diários, semanais (dias da semana) e mensais (dia do mês que pode não existir).",
+  "context": ["test/recur.test.js"],
+  "test": "test/*.test.js",
+  "singleFile": "src/recur.js"
+}

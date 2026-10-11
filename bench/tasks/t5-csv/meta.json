@@ -1,0 +1,8 @@
+{
+  "id": "t5-csv",
+  "title": "T5 parser de CSV",
+  "description": "Parser com máquina de estados: aspas, aspas escapadas, quebras de linha dentro de campos, CRLF, cabeçalho e erros com número de linha.",
+  "context": ["test/csv.test.js"],
+  "test": "test/*.test.js",
+  "singleFile": "src/csv.js"
+}
