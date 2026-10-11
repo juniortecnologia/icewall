@@ -1,7 +1,7 @@
 [Unit]
 Description=ICEWALL, painel do DGX Spark (127.0.0.1:4310)
-After=network-online.target
-Wants=network-online.target
+# Sem dependência de rede: network-online.target não existe no systemd de usuário. Os coletores
+# toleram o Spark fora do ar (gravam o erro e tentam de novo no próximo ciclo).
 
 [Service]
 Type=simple

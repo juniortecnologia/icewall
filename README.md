@@ -7,10 +7,10 @@ Painel de controle local do DGX Spark (10.0.5.18) e dos modelos que o Claude Cod
 ```bash
 cp .env.example .env.local   # preencha TYPESAFE_API_KEY
 npm install
-npm run build && npm start   # http://127.0.0.1:4310 (só localhost)
+npm run build && npm start   # http://127.0.0.1:4310 (só localhost); aqui quem roda é o serviço, veja abaixo
 ```
 
-Como serviço: veja [Serviço](#serviço-systemd-de-usuário). Desenvolvimento: `npm run dev` (pare o serviço antes, a porta é a mesma). Testes: `npm test`, `npm run typecheck`, `npm run lint`, `npm run bench:validate`.
+Como serviço: veja [Serviço](#serviço-systemd-de-usuário). Desenvolvimento: `npm run dev`, com o serviço parado (a porta é a mesma). Testes: `npm test`, `npm run typecheck`, `npm run lint`, `npm run bench:validate`.
 
 Pré-requisitos nesta máquina:
 - `ssh spark` sem senha (alias com ControlMaster no `~/.ssh/config`, usuário `facini`).
@@ -59,10 +59,10 @@ Falhas de infraestrutura (códigos 2, 3 e 4 do `ollama-delegate`) não gastam pe
 
 ## Serviço (systemd de usuário)
 
-```bash
-systemctl --user link ~/Projects/ICEWALL/deploy/icewall.service
-systemctl --user enable --now icewall
-journalctl --user -u icewall -f      # logs
-```
+Nesta máquina o painel roda como o serviço de usuário `icewall` e sobe no boot. Instalação, operação, desenvolvimento com o serviço no ar e problemas comuns estão em [deploy/README.md](deploy/README.md). O essencial:
 
-Depois de `git pull` ou de mudar código: `npm run build && systemctl --user restart icewall`. O caminho do Node (nvm) está fixo na unidade: ao trocar de versão, edite-a e rode `systemctl --user daemon-reload`.
+```bash
+systemctl --user status icewall                      # estado
+journalctl --user -u icewall -f                       # logs
+npm run build && systemctl --user restart icewall     # aplicar mudança de código
+```

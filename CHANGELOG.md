@@ -5,7 +5,7 @@
 - **Recomendações que não saíam do painel:** "Verificar o Spark agora" (Auditor) relê segurança, updates e SO antes de auditar; antes só refazia as recomendações com o retrato antigo. A coleta de segurança passou de 1 h para 15 min, e o Auditor mostra quando o Spark foi lido.
 - **Login por senha no SSH:** passa a ser medido por uma tentativa de login sem chave a partir desta máquina (sem enviar senha), não só pelo grep nos arquivos do sshd. Isso pega configuração sem reload.
 - **Portas de container:** a recomendação não sugere mais o ufw, que o Docker ignora. Ela traz a regra na chain `DOCKER-USER` liberando só o IP desta máquina, ou a publicação em 127.0.0.1.
-- **Serviço do systemd:** `deploy/icewall.service` (unidade de usuário, sobe no login e reinicia se cair).
+- **Serviço do systemd:** `deploy/icewall.service`, unidade de usuário que sobe no boot (com linger) e reinicia se cair. O guia de operação está em `deploy/README.md`.
 
 ## v1.0.0 (2026-10-10)
 
