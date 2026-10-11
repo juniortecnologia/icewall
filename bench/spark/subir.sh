@@ -9,7 +9,8 @@ for i in $(seq 1 120); do
   L=$(docker logs "$C" 2>&1)
   if grep -q "startup complete" <<<"$L"; then echo "ok $C $(( $(date +%s) - T0 ))"; exit 0; fi
   if grep -q "Traceback" <<<"$L" || ! docker ps -q -f "name=^$C$" | grep -q .; then
-    echo "falhou $C erro"; tail -20 <<<"$L"; exit 1
+    # a causa vai por último: o ICEWALL guarda o fim da saída
+    echo "falhou $C erro"; tail -20 <<<"$L"; echo "--- causa:"; grep -E "(Value|Runtime|OutOfMemory)Error:" <<<"$L" | head -3; exit 1
   fi
   sleep 8
 done

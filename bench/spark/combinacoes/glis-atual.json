@@ -1,10 +1,10 @@
 {
   "titulo": "Combinação da glis-bench (referência)",
-  "descricao": "Como o subir-tudo.sh deixou em 9/10: código Qwen3.8-27B (0,30, MTP 3), chat Qwen3.6-35B-A3B (0,24, MTP 2, 16 sessões), embedding e reranker 4B (0,09 cada).",
+  "descricao": "Como o subir-tudo.sh deixou em 9/10: código Qwen3.8-27B (0,30, MTP 3), chat Qwen3.6-35B-A3B (0,24, MTP 2, 16 sessões), embedding e reranker 4B (0,10 cada; a glis-bench usava 0,09, que deixa só 0,9 GB de cache KV e às vezes não sobe).",
   "servicos": [
     { "container": "glis-code", "script": "serve-code.sh", "args": ["0.30", "3"] },
     { "container": "glis-chat", "script": "serve-chat.sh", "args": ["0.24", "2", "16"] },
-    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.09"] },
-    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.09"] }
+    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.10"] },
+    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.10"] }
   ]
 }

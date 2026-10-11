@@ -4,8 +4,8 @@
   "servicos": [
     { "container": "glis-code", "script": "serve-code.sh", "args": ["0.30", "3"] },
     { "container": "glis-chat", "script": "serve-chat.sh", "args": ["0.24", "2", "16"] },
-    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.09"] },
-    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.09"] }
+    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.10"] },
+    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.10"] }
   ],
   "gate": true
 }
