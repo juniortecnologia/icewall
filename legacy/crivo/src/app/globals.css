@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@theme {
+  --color-fundo: #04070c;
+  --color-painel: #0a1018;
+  --color-painel-2: #0f1722;
+  --color-borda: #1c2734;
+  --color-texto: #d5e1ec;
+  --color-apagado: #7d8fa3;
+  --color-verde: #34f08a;
+  --color-ambar: #ffb627;
+  --color-vermelho: #ff3d52;
+  --color-info: #4cc9f0;
+
+  --animate-entrada: entrada 1.6s ease-out;
+  --animate-pulso: pulso 1.6s ease-in-out infinite;
+
+  @keyframes entrada {
+    0% {
+      box-shadow: 0 0 0 1px var(--color-info), 0 0 22px -4px var(--color-info);
+      background-color: color-mix(in oklab, var(--color-info) 10%, var(--color-painel));
+    }
+    100% {
+      box-shadow: 0 0 0 1px transparent, 0 0 0 0 transparent;
+    }
+  }
+  @keyframes pulso {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+}
+
+/* as fontes vêm do next/font, definidas no <html> */
+@theme inline {
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+  --font-rotulo: var(--font-archivo), ui-sans-serif, sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-fundo);
+  color: var(--color-texto);
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-info) 35%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
