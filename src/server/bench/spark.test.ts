@@ -85,6 +85,17 @@ describe("cenariosAplicaveis", () => {
     expect(ids).not.toContain("convivencia");
   });
 
+  it("convivência realista com o agente só onde há glis-code", () => {
+    const todos = Object.keys(CENARIOS);
+    expect(cenariosAplicaveis(comb(["glis-chat", "glis-embed", "glis-rerank"]), todos)).toEqual(
+      expect.arrayContaining(["carga-real", "convivencia-real-sem-codigo", "convivencia-real-sem-codigo-gate-img"]),
+    );
+    expect(cenariosAplicaveis(comb(["glis-chat", "glis-embed", "glis-rerank"]), todos)).not.toContain("convivencia-real");
+    expect(comandoCenario("convivencia-real-gate-img")).toBe(
+      "cd ~/icewall-bench && ./medir.sh python3 'carga_real.py' '--users' '7' '--dur' '300' '--code' '--img' '30' '--gate-img' '--rag'",
+    );
+  });
+
   it("respeita a ordem e a seleção pedidas", () => {
     expect(cenariosAplicaveis(comb(["glis-chat"]), ["imagem", "carga"])).toEqual(["imagem", "carga"]);
   });

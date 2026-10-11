@@ -54,11 +54,46 @@ interface Cenario {
 
 export const CENARIOS = {
   carga: {
-    titulo: "Carga do chat: 1, 4, 7 e 10 simultâneos (prompts RAG ~6k tokens)",
+    titulo: "Rajada do chat: 1, 4, 7 e 10 chegando no mesmo segundo (prompts RAG ~6k tokens; pior caso)",
     script: "bench_oai.py",
     args: ["--port", "8000", "--model", "chat", "--conc", "1", "4", "7", "10"],
     precisa: ["glis-chat"],
     timeoutS: 1800,
+  },
+  "carga-real": {
+    titulo: "Carga realista do chat: 7 pessoas, uma pergunta a cada 20–40 s cada, por 5 min (critério do RNF-01)",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300"],
+    precisa: ["glis-chat"],
+    timeoutS: 900,
+  },
+  "convivencia-real-sem-codigo": {
+    titulo: "Carga realista + imagens em fila + embed/rerank",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300", "--img", "30", "--rag"],
+    precisa: ["glis-chat", "glis-embed", "glis-rerank"],
+    timeoutS: 1200,
+  },
+  "convivencia-real-sem-codigo-gate-img": {
+    titulo: "Carga realista + imagens que esperam o chat ficar livre + embed/rerank",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300", "--img", "30", "--gate-img", "--rag"],
+    precisa: ["glis-chat", "glis-embed", "glis-rerank"],
+    timeoutS: 1200,
+  },
+  "convivencia-real": {
+    titulo: "Carga realista + agente de código + imagens em fila + embed/rerank",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300", "--code", "--img", "30", "--rag"],
+    precisa: ["glis-chat", "glis-code", "glis-embed", "glis-rerank"],
+    timeoutS: 1200,
+  },
+  "convivencia-real-gate-img": {
+    titulo: "Carga realista + agente de código + imagens que esperam o chat ficar livre + embed/rerank",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300", "--code", "--img", "30", "--gate-img", "--rag"],
+    precisa: ["glis-chat", "glis-code", "glis-embed", "glis-rerank"],
+    timeoutS: 1200,
   },
   "rag-qualidade": {
     titulo: "Qualidade de RAG em PT-BR: 10 perguntas, 2 armadilhas",
@@ -165,7 +200,8 @@ export function lerSaida(stdout: string): Saida {
   return { linhas, memMinMb, acertos, texto: texto.join("\n") };
 }
 
-// Critério do chat (PRD RNF-01 e o princípio do Junior): com 7 simultâneos, primeiro token em até 5 s e ≥ 35 tok/s por usuário.
+// Critério do chat (PRD RNF-01 e o princípio do Junior): com 7 pessoas, primeiro token em até 5 s e ≥ 35 tok/s por usuário.
+// Vale a carga realista (carga_real.py); a rajada, com os 7 no mesmo segundo, é só o pior caso.
 export const META_TTFT_S = 5;
 export const META_TOK_S = 35;
 export const META_CONC = 7;

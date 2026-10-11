@@ -322,8 +322,8 @@ export function bancada() {
     const porComb = (ultimos[r.model] ??= {});
     if (porComb[r.task]) continue;
     const linhas = (r.metricas?.linhas ?? []) as Record<string, unknown>[];
-    // carga: a linha de 7 simultâneos; convivência: o chat medido com os outros serviços rodando junto
-    const chat = r.task === "carga" ? linhas : r.task.startsWith("convivencia") ? linhas.flatMap((l) => (l.chat ? [l.chat as Record<string, unknown>] : [])) : [];
+    // carga e convivência: a linha de 7 pessoas (no stress.py ela vem dentro de "chat")
+    const chat = r.task.startsWith("carga") || r.task.startsWith("convivencia") ? linhas.flatMap((l) => (l.chat ? [l.chat as Record<string, unknown>] : [l])) : [];
     porComb[r.task] = { ...r, resumo: chat.length ? resumoCarga(chat) : null };
   }
   return {

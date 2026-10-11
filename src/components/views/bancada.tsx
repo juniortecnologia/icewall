@@ -28,6 +28,13 @@ function Veredito({ r }: { r?: ResultadoBancada }) {
   );
 }
 
+const CONVIVENCIA: [string, string][] = [
+  ["convivencia-real", "com agente de código e imagens"],
+  ["convivencia-real-gate-img", "com agente e imagens esperando o chat"],
+  ["convivencia-real-sem-codigo", "com imagens"],
+  ["convivencia-real-sem-codigo-gate-img", "com imagens esperando o chat"],
+];
+
 function memMin(porTask: Record<string, ResultadoBancada> | undefined): number | null {
   const v = Object.values(porTask ?? {})
     .map((r) => r.metricas?.memMinMb)
@@ -180,23 +187,35 @@ export function BancadaView() {
       />
 
       <Panel title="Combinações" pad={false} aside="último resultado de cada cenário">
-        <Table head={["Combinação", "Chat sozinho com 7", "Chat com tudo junto", "RAG em PT-BR", "Menor memória livre", ""]}>
+        <Table head={["Combinação", "Chat com 7 (realista)", "Tudo junto (realista)", "Rajada de 7 (pior caso)", "RAG em PT-BR", "Menor memória livre", ""]}>
           {d.combinacoes.map((c) => {
             const p = d.ultimos[c.id];
-            const conv = p?.convivencia ?? p?.["convivencia-sem-codigo"];
+            const juntos = CONVIVENCIA.filter(([id]) => p?.[id]);
             const rag = p?.["rag-qualidade"]?.metricas?.acertos as { ok: number; total: number } | null | undefined;
             const mem = memMin(p);
             return (
               <tr key={c.id} className="align-top">
-                <td className="max-w-[34ch]">
+                <td className="max-w-[30ch]">
                   <div className="font-medium">{c.titulo}</div>
                   <div className="text-[12px] text-ink-3">{c.servicos.map((s) => s.container.replace("glis-", "")).join(" + ")}{c.gate ? " + gate" : ""}</div>
                 </td>
                 <td>
-                  <Veredito r={p?.carga} />
+                  <Veredito r={p?.["carga-real"]} />
+                </td>
+                <td className="space-y-2">
+                  {juntos.length ? (
+                    juntos.map(([id, rotulo]) => (
+                      <div key={id}>
+                        <div className="text-[12px] text-ink-3">{rotulo}</div>
+                        <Veredito r={p[id]} />
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-ink-3">não rodou</span>
+                  )}
                 </td>
                 <td>
-                  <Veredito r={conv} />
+                  <Veredito r={p?.carga} />
                 </td>
                 <td className="tnum">{rag ? `${rag.ok}/${rag.total}` : "—"}</td>
                 <td className="tnum">{mem != null ? `${num(mem / 1024, 1)} GB` : "—"}</td>
@@ -205,6 +224,9 @@ export function BancadaView() {
             );
           })}
         </Table>
+        <p className="border-t border-line-soft px-4 py-2 text-[12px] text-ink-3">
+          Vale a carga realista: 7 pessoas, cada uma com uma pergunta a cada 20–40 s. Na rajada as 7 chegam no mesmo segundo; fica só como pior caso.
+        </p>
       </Panel>
 
       {aberta && d.ultimos[aberta] && (
