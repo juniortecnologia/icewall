@@ -1,0 +1,1 @@
+ALTER TABLE `bench_results` ADD `metricas` text;

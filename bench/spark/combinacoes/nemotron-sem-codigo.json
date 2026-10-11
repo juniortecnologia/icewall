@@ -1,0 +1,9 @@
+{
+  "titulo": "Nemotron 3.5 sem o agente de código",
+  "descricao": "Chat Nemotron 3.5 Lightning + embedding + reranker, sem o Qwen3.8-27B denso.",
+  "servicos": [
+    { "container": "glis-chat", "script": "serve-nemo.sh", "args": ["0.28", "3", "16"] },
+    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.09"] },
+    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.09"] }
+  ]
+}

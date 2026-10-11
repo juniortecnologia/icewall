@@ -1,0 +1,5 @@
+{
+  "titulo": "Qwen3.6 sozinho",
+  "descricao": "Só o chat Qwen3.6-35B-A3B NVFP4 (0,24, MTP 2, 16 sessões), sem código, embedding nem imagem: o teto do chat.",
+  "servicos": [{ "container": "glis-chat", "script": "serve-chat.sh", "args": ["0.24", "2", "16"] }]
+}

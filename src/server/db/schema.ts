@@ -132,7 +132,7 @@ export const benchRuns = sqliteTable("bench_runs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   createdAt: integer("created_at").notNull().default(now),
   finishedAt: integer("finished_at"),
-  kind: text("kind", { enum: ["perf", "quality"] }).notNull(),
+  kind: text("kind", { enum: ["perf", "quality", "spark"] }).notNull(),
   status: text("status", { enum: ["queued", "running", "done", "failed", "cancelled"] }).notNull(),
   models: text("models", { mode: "json" }).$type<string[]>().notNull(),
   tasks: text("tasks", { mode: "json" }).$type<string[]>().notNull(),
@@ -165,6 +165,8 @@ export const benchResults = sqliteTable(
     evalTokens: integer("eval_tokens"),
     sizeVram: real("size_vram"),
     delegateRunId: text("delegate_run_id"),
+    /** Bancada do Spark: o JSON que o script imprimiu (carga, RAG, imagem…), mais a memória mínima. */
+    metricas: text("metricas", { mode: "json" }).$type<Record<string, unknown>>(),
     error: text("error"),
   },
   (t) => [index("bench_results_run").on(t.benchRunId)],

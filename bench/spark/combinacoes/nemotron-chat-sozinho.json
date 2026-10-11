@@ -1,0 +1,5 @@
+{
+  "titulo": "Nemotron 3.5 Lightning sozinho",
+  "descricao": "Só o chat Nemotron 3.5 Lightning 30B-A3B NVFP4 com o rascunho DSpark (0,28, 3 tokens, 16 sessões), como no serve-nemo.sh.",
+  "servicos": [{ "container": "glis-chat", "script": "serve-nemo.sh", "args": ["0.28", "3", "16"] }]
+}

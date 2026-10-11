@@ -1,5 +1,6 @@
 import "server-only";
 import fs from "node:fs";
+import { eq, ne } from "drizzle-orm";
 import { getDb, schema } from "../db/client";
 import { getSetting } from "../lib/store";
 import { MODELS_JSON } from "../lib/paths";
@@ -59,6 +60,9 @@ export function benchRows(): ResultRow[] {
       sizeVram: schema.benchResults.sizeVram,
     })
     .from(schema.benchResults)
+    // A bancada do Spark mede combinações de serviços, não modelos do Ollama: fica fora do ranking.
+    .innerJoin(schema.benchRuns, eq(schema.benchRuns.id, schema.benchResults.benchRunId))
+    .where(ne(schema.benchRuns.kind, "spark"))
     .all();
 }
 

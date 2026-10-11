@@ -15,6 +15,7 @@ import { getDb, schema } from "./db/client";
 import { jevEnabled, JEV_MODEL } from "./jev/client";
 import { answersByKind } from "./jev/recommend";
 import { isSuccess, type AnswerMap } from "./jev/rules";
+import { CENARIOS, lerCombinacoes, META_CONC, META_TOK_S, META_TTFT_S, resumoCarga, type ResumoCarga } from "./bench/spark";
 import { custoJev } from "./crivo/store";
 import { getSnapshot, recentEvents } from "./lib/store";
 import { jobStates } from "./scheduler";
@@ -296,6 +297,41 @@ export function bench() {
     weights: benchWeights(),
     models: getSnapshot<OllamaSnapshot>("ollama")?.data?.models.filter((m) => m.capabilities.includes("completion")).map((m) => m.name) ?? [],
     tiers: Object.entries(readModelsJson()?.tiers ?? {}).map(([name, t]) => ({ name, model: t.model })),
+    spark: {
+      combinacoes: lerCombinacoes(),
+      cenarios: Object.entries(CENARIOS).map(([id, c]) => ({ id, titulo: c.titulo, precisa: c.precisa })),
+    },
+  };
+}
+
+export type ResultadoBancada = typeof schema.benchResults.$inferSelect & { resumo: ResumoCarga | null };
+
+/** Bancada do Spark: combinações, cenários, rodadas e o último resultado de cada cenário por combinação. */
+export function bancada() {
+  const db = getDb();
+  const runs = db.select().from(schema.benchRuns).where(eq(schema.benchRuns.kind, "spark")).orderBy(desc(schema.benchRuns.id)).limit(20).all();
+  const rows = db
+    .select({ r: schema.benchResults })
+    .from(schema.benchResults)
+    .innerJoin(schema.benchRuns, eq(schema.benchRuns.id, schema.benchResults.benchRunId))
+    .where(eq(schema.benchRuns.kind, "spark"))
+    .orderBy(desc(schema.benchResults.id))
+    .all();
+  const ultimos: Record<string, Record<string, ResultadoBancada>> = {};
+  for (const { r } of rows) {
+    const porComb = (ultimos[r.model] ??= {});
+    if (porComb[r.task]) continue;
+    const linhas = (r.metricas?.linhas ?? []) as Record<string, unknown>[];
+    // carga: a linha de 7 simultâneos; convivência: o chat medido com os outros serviços rodando junto
+    const chat = r.task === "carga" ? linhas : r.task.startsWith("convivencia") ? linhas.flatMap((l) => (l.chat ? [l.chat as Record<string, unknown>] : [])) : [];
+    porComb[r.task] = { ...r, resumo: chat.length ? resumoCarga(chat) : null };
+  }
+  return {
+    combinacoes: lerCombinacoes(),
+    cenarios: Object.entries(CENARIOS).map(([id, c]) => ({ id, titulo: c.titulo, precisa: c.precisa as string[] })),
+    runs,
+    ultimos,
+    metas: { ttftS: META_TTFT_S, tokS: META_TOK_S, conc: META_CONC },
   };
 }
 

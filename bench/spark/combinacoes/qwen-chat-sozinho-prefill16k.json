@@ -1,0 +1,5 @@
+{
+  "titulo": "Qwen3.6 sozinho, prefill de 16k",
+  "descricao": "Igual ao Qwen3.6 sozinho, com --max-num-batched-tokens 16384 (o padrão da glis-bench é 8192): testa se o 1º token cai com 7 prompts de RAG chegando juntos.",
+  "servicos": [{ "container": "glis-chat", "script": "serve-chat.sh", "args": ["0.24", "2", "16", "16384"] }]
+}

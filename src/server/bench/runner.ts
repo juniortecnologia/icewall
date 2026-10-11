@@ -12,6 +12,8 @@ import { ollamaGpuBytes } from "../spark/collectors/health";
 import { ollamaFetch } from "../spark/collectors/ollama";
 import { parseComputeApps } from "../parsers";
 import { sparkExec } from "../spark/ssh";
+import { cenariosAplicaveis, lerCombinacoes } from "./spark";
+import { enviarBancada, executarCombinacao, prepararSpark, restaurarSpark } from "./spark-run";
 import { listTasks, PERF_SIZES, stageTask, type TaskMeta } from "./tasks";
 
 
@@ -87,9 +89,9 @@ async function loadedVram(model: string): Promise<number | null> {
  * Segura o lock do delegate-local (o mesmo flock do script Python) enquanto `fn` roda:
  * a medição não disputa o Spark com uma delegação, e nenhuma delegação começa no meio dela.
  */
-async function withDelegateLock<T>(fn: () => Promise<T>): Promise<T> {
+async function withDelegateLock<T>(fn: () => Promise<T>, maxSeconds = 7200): Promise<T> {
   fs.mkdirSync(path.dirname(DELEGATE_LOCK), { recursive: true });
-  const holder = spawn("flock", ["-w", "900", DELEGATE_LOCK, "-c", "echo LOCKED; exec sleep 7200"], {
+  const holder = spawn("flock", ["-w", "900", DELEGATE_LOCK, "-c", `echo LOCKED; exec sleep ${Math.floor(maxSeconds)}`], {
     stdio: ["ignore", "pipe", "ignore"],
     detached: true, // grupo próprio: o sleep herda o descritor do lock e precisa morrer junto
   });
@@ -235,7 +237,40 @@ async function qualityTask(run: BenchRun, model: string, task: TaskMeta, sample:
 
 // ---------- fila ----------
 
+// ---------- bancada do Spark (vLLM) ----------
+
+async function executeSpark(run: BenchRun) {
+  const combs = lerCombinacoes().filter((c) => run.models.includes(c.id));
+  const total = 1 + run.samples * combs.reduce((n, c) => n + 1 + cenariosAplicaveis(c, run.tasks).length, 0);
+  progress(run.id, { status: "running", total, done: 0 });
+  let done = 0;
+  const step = (label: string) => {
+    progress(run.id, { current: label, done });
+    done++;
+  };
+  // O Ollama fica parado durante a rodada: o lock impede que uma delegação comece no meio.
+  await withDelegateLock(async () => {
+    step("copiando a bancada para o Spark");
+    await enviarBancada();
+    const ollamaEstava = await prepararSpark();
+    try {
+      for (let sample = 1; sample <= run.samples; sample++) {
+        for (const comb of combs) {
+          if (cancelled(run.id)) return;
+          await executarCombinacao(run, comb, sample, step, () => cancelled(run.id));
+        }
+      }
+    } finally {
+      await restaurarSpark(ollamaEstava);
+    }
+  }, 12 * 3600);
+  if (cancelled(run.id)) return;
+  progress(run.id, { status: "done", done: total, current: null, finishedAt: Date.now() });
+  addEvent("bench", "info", `Bancada do Spark #${run.id} concluída`, { combinacoes: run.models });
+}
+
 async function execute(run: BenchRun) {
+  if (run.kind === "spark") return executeSpark(run);
   const tasks = run.kind === "quality" ? listTasks().filter((t) => run.tasks.includes(t.id)) : [];
   const total = run.kind === "quality" ? run.models.length * tasks.length * run.samples : run.models.length * run.samples * (1 + Object.keys(PERF_SIZES).length);
   progress(run.id, { status: "running", total, done: 0 });
