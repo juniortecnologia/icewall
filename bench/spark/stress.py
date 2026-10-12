@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Teste integrado no Spark: imagem (ComfyUI FLUX.2 klein 4B distilado) + chat 35B-A3B + código 27B + embed/rerank.
-# Uso: stress.py img N | all
+# Uso: stress.py img N [flux|qwen|zimage] | all
 import json, sys, threading, time, urllib.request, random, statistics as st
 sys.path.insert(0, ".")
 import bench_oai as b
@@ -8,7 +8,47 @@ import bench_oai as b
 COMFY = "http://127.0.0.1:8188"
 
 
-def wf(prompt, seed, w=1024, h=1024, steps=4):
+IMG = "flux"  # flux (FLUX.2 klein 4B, 4 passos) | qwen (Qwen-Image-2512 FP8 + Lightning, 4 passos) | zimage (Z-Image-Turbo, 8 passos)
+
+
+def wf(prompt, seed, w=1024, h=1024):
+    return {"flux": wf_flux, "qwen": wf_qwen, "zimage": wf_zimage}[IMG](prompt, seed, w, h)
+
+
+def wf_ksampler(unet, clip, clip_type, vae, prompt, seed, w, h, steps, sampler, shift, lora=None):
+    # Qwen-Image e Z-Image: ModelSamplingAuraFlow + KSampler com cfg 1 (negativo zerado). O SaveImage é o nó "13", como no FLUX.
+    modelo = ["1", 0]
+    g = {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": unet, "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": clip, "type": clip_type, "device": "default"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": vae}},
+    }
+    if lora:
+        g["14"] = {"class_type": "LoraLoaderModelOnly", "inputs": {"model": modelo, "lora_name": lora, "strength_model": 1.0}}
+        modelo = ["14", 0]
+    g.update({
+        "4": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["2", 0]}},
+        "5": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["4", 0]}},
+        "6": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": modelo, "shift": shift}},
+        "10": {"class_type": "EmptySD3LatentImage", "inputs": {"width": w, "height": h, "batch_size": 1}},
+        "11": {"class_type": "KSampler", "inputs": {"model": ["6", 0], "seed": seed, "steps": steps, "cfg": 1.0, "sampler_name": sampler, "scheduler": "simple",
+                                                    "positive": ["4", 0], "negative": ["5", 0], "latent_image": ["10", 0], "denoise": 1.0}},
+        "12": {"class_type": "VAEDecode", "inputs": {"samples": ["11", 0], "vae": ["3", 0]}},
+        "13": {"class_type": "SaveImage", "inputs": {"images": ["12", 0], "filename_prefix": "glisbench-" + IMG}},
+    })
+    return g
+
+
+def wf_qwen(prompt, seed, w, h):
+    return wf_ksampler("qwen_image_2512_fp8_e4m3fn.safetensors", "qwen_2.5_vl_7b_fp8_scaled.safetensors", "qwen_image", "qwen_image_vae.safetensors",
+                       prompt, seed, w, h, 4, "euler", 3.1, lora="Qwen-Image-2512-Lightning-4steps-V1.0-bf16.safetensors")
+
+
+def wf_zimage(prompt, seed, w, h):
+    return wf_ksampler("z_image_turbo_bf16.safetensors", "qwen_3_4b.safetensors", "lumina2", "ae.safetensors", prompt, seed, w, h, 8, "res_multistep", 3.0)
+
+
+def wf_flux(prompt, seed, w=1024, h=1024, steps=4):
     return {
         "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "flux-2-klein-4b.safetensors", "weight_dtype": "default"}},
         "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen_3_4b.safetensors", "type": "flux2", "device": "default"}},
@@ -26,9 +66,17 @@ def wf(prompt, seed, w=1024, h=1024, steps=4):
     }
 
 
-def gen(prompt="Foto de produto: fone de ouvido preto sobre fundo branco, iluminação de estúdio, anúncio de e-commerce"):
+def liberar():
+    # Descarrega os modelos do ComfyUI: trocar de modelo de imagem sem isso deixa dois carregados na memória unificada.
+    req = urllib.request.Request(COMFY + "/free", json.dumps({"unload_models": True, "free_memory": True}).encode(), {"Content-Type": "application/json"})
+    urllib.request.urlopen(req, timeout=30).read()
+
+
+def gen(prompt="Foto de produto: fone de ouvido preto sobre fundo branco, iluminação de estúdio, anúncio de e-commerce", seed=None, prefixo=None):
     t0 = time.time()
-    req = urllib.request.Request(COMFY + "/prompt", json.dumps({"prompt": wf(prompt, random.randint(0, 2**31))}).encode(), {"Content-Type": "application/json"})
+    g = wf(prompt, random.randint(0, 2**31) if seed is None else seed)
+    if prefixo: g["13"]["inputs"]["filename_prefix"] = prefixo
+    req = urllib.request.Request(COMFY + "/prompt", json.dumps({"prompt": g}).encode(), {"Content-Type": "application/json"})
     try:
         pid = json.load(urllib.request.urlopen(req, timeout=30))["prompt_id"]
     except urllib.error.HTTPError as e:
@@ -38,6 +86,7 @@ def gen(prompt="Foto de produto: fone de ouvido preto sobre fundo branco, ilumin
         if pid in h:
             s = h[pid]["status"]
             return dict(seg=round(time.time() - t0, 1), ok=s.get("status_str") == "success", imgs=len(h[pid].get("outputs", {}).get("13", {}).get("images", [])),
+                        arquivos=[i["filename"] for i in h[pid].get("outputs", {}).get("13", {}).get("images", [])],
                         erro=None if s.get("status_str") == "success" else str(s)[:300])
         time.sleep(0.25)
     return dict(erro="timeout")
@@ -67,6 +116,8 @@ def rag_calls(secs, out):  # embed + rerank contínuos (simula a recuperação d
 if __name__ == "__main__":
     mode = sys.argv[1]
     if mode == "img":
+        if len(sys.argv) > 3: IMG = sys.argv[3]
+        liberar()
         n = int(sys.argv[2]); print("# 1ª inclui carga dos modelos"); [print(json.dumps(gen(), ensure_ascii=False), flush=True) for _ in range(n)]
     elif mode == "all":
         scen = sys.argv[2]

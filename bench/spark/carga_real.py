@@ -5,7 +5,7 @@
 # O agente pode ir a outro modelo (--code-port/--code-model; 8000 chat = um modelo só para os dois), levar contexto longo
 # (--code-chars, trecho do PRD) e pedir prioridade menor (--code-priority N; o vLLM precisa de --scheduling-policy priority).
 # Uso: carga_real.py [--users 7] [--dur 300] [--min 20] [--max 40] [--predict 400] [--code] [--code-port 8001] [--code-model code]
-#      [--code-chars 0] [--code-priority N] [--img PAUSA_S] [--gate-img] [--rag]
+#      [--code-chars 0] [--code-priority N] [--img PAUSA_S] [--img-model flux|qwen|zimage] [--gate-img] [--rag]
 import argparse, json, random, re, threading, time, statistics as st, urllib.request
 import bench_oai as b
 
@@ -16,7 +16,7 @@ a.add_argument("--predict", type=int, default=400); a.add_argument("--chars", ty
 a.add_argument("--code", action="store_true"); a.add_argument("--code-port", type=int, default=8001)
 a.add_argument("--code-model", default="code"); a.add_argument("--code-chars", type=int, default=0)
 a.add_argument("--code-priority", type=int, default=None); a.add_argument("--img", type=float, default=None)
-a.add_argument("--gate-img", action="store_true"); a.add_argument("--rag", action="store_true")
+a.add_argument("--img-model", default="flux", choices=["flux", "qwen", "zimage"]); a.add_argument("--gate-img", action="store_true"); a.add_argument("--rag", action="store_true")
 a.add_argument("--seed", type=int, default=42)
 a = a.parse_args()
 
@@ -66,10 +66,15 @@ def chat_ocupado():
 
 def imagens():
     import stress as s
+    s.IMG = a.img_model
+    if s.IMG != "flux": s.liberar()  # o FLUX fica carregado entre cenários, como nas rodadas anteriores
     while not stop.is_set():
         w0 = time.time()
         if a.gate_img:
-            while not stop.is_set() and chat_ocupado(): time.sleep(0.2)
+            # Com o agente no próprio chat, a fila do vLLM nunca esvazia: o gate olha só as conversas em andamento,
+            # como o backend do Glis faria. Com o agente separado (:8001), segue pelas métricas do chat.
+            ocupado = (lambda: ativos[0] > 0) if a.code and a.code_port == 8000 else chat_ocupado
+            while not stop.is_set() and ocupado(): time.sleep(0.2)
         if stop.is_set(): break
         r = s.gen(); r["espera"] = round(time.time() - w0, 1); imgs.append(r)
         if r.get("erro"): errs.append("img:" + str(r["erro"])[:100])

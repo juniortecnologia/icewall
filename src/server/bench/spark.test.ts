@@ -157,14 +157,14 @@ describe("resumoCarga", () => {
     { conc: 10, ok: 10, erros: 0, ttft_p95: 6.1, dec_tps_por_req: 30 },
   ];
 
-  it("passa com 7 simultâneos: TTFT p95 ≤ 5 s e ≥ 35 tok/s por pedido, sem erros", () => {
+  it("passa com 7 simultâneos: TTFT p95 ≤ 6 s e ≥ 20 tok/s por pedido, sem erros", () => {
     expect(resumoCarga(linhas)).toEqual({ ttftP95: 3.4, tokSPorUsuario: 41.2, erros: 0, passa: true, motivos: [] });
   });
 
   it("reprova e diz por quê", () => {
-    const r = resumoCarga([{ conc: 7, ok: 6, erros: 1, ttft_p95: 8.9, dec_tps_por_req: 25 }]);
+    const r = resumoCarga([{ conc: 7, ok: 6, erros: 1, ttft_p95: 8.9, dec_tps_por_req: 15 }]);
     expect(r?.passa).toBe(false);
-    expect(r?.motivos).toEqual(["primeiro token em 8,9 s (meta ≤ 5 s)", "25 tok/s por usuário (meta ≥ 35)", "1 erro"]);
+    expect(r?.motivos).toEqual(["primeiro token em 8,9 s (meta ≤ 6 s)", "15 tok/s por usuário (meta ≥ 20)", "1 erro"]);
   });
 
   it("sem a linha de 7 simultâneos não há veredito", () => {

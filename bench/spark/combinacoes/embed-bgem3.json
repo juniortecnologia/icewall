@@ -1,0 +1,8 @@
+{
+  "titulo": "Embedding BGE-M3 + reranker 4B",
+  "descricao": "Só embedding e reranker 4B, sem chat: mede a qualidade da busca em PT-BR (emb_qual.py). BGE-M3 (568M, multilíngue, sem instrução na pergunta): usar o cenário embed-qualidade-bge.",
+  "servicos": [
+    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.10", "BAAI_bge-m3"] },
+    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.10"] }
+  ]
+}

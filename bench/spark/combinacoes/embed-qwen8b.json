@@ -1,0 +1,8 @@
+{
+  "titulo": "Embedding Qwen3-Embedding-8B + reranker 4B",
+  "descricao": "Só embedding e reranker 4B, sem chat: mede a qualidade da busca em PT-BR (emb_qual.py). O 8B em bf16 tem ~16 GB: sobe com 0,20 da memória.",
+  "servicos": [
+    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.20", "Qwen_Qwen3-Embedding-8B"] },
+    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.10"] }
+  ]
+}

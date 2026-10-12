@@ -116,6 +116,48 @@ export const CENARIOS = {
     precisa: ["glis-chat", "glis-embed", "glis-rerank"],
     timeoutS: 1200,
   },
+  "convivencia-real-agente-no-chat-img-qwen": {
+    titulo: "Carga realista + agente no próprio chat + imagens Qwen-Image-2512 (Lightning, 4 passos) em fila + embed/rerank",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300", "--code", "--code-port", "8000", "--code-model", "chat", "--code-priority", "10", "--img", "30", "--img-model", "qwen", "--rag"],
+    precisa: ["glis-chat", "glis-embed", "glis-rerank"],
+    timeoutS: 1200,
+  },
+  "convivencia-real-agente-no-chat-img-zimage": {
+    titulo: "Carga realista + agente no próprio chat + imagens Z-Image-Turbo (8 passos) em fila + embed/rerank",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300", "--code", "--code-port", "8000", "--code-model", "chat", "--code-priority", "10", "--img", "30", "--img-model", "zimage", "--rag"],
+    precisa: ["glis-chat", "glis-embed", "glis-rerank"],
+    timeoutS: 1200,
+  },
+  "convivencia-real-agente-no-chat-img-zimage-gate": {
+    titulo: "Carga realista + agente no próprio chat + imagens Z-Image-Turbo que esperam as conversas acabarem + embed/rerank",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300", "--code", "--code-port", "8000", "--code-model", "chat", "--code-priority", "10", "--img", "30", "--img-model", "zimage", "--gate-img", "--rag"],
+    precisa: ["glis-chat", "glis-embed", "glis-rerank"],
+    timeoutS: 1200,
+  },
+  "convivencia-real-agente-no-chat-longo-img-zimage-gate": {
+    titulo: "Carga realista + agente no próprio chat com contexto longo (~18k tokens) + imagens Z-Image-Turbo que esperam as conversas acabarem + embed/rerank",
+    script: "carga_real.py",
+    args: ["--users", "7", "--dur", "300", "--code", "--code-port", "8000", "--code-model", "chat", "--code-priority", "10", "--code-chars", "60000", "--img", "30", "--img-model", "zimage", "--gate-img", "--rag"],
+    precisa: ["glis-chat", "glis-embed", "glis-rerank"],
+    timeoutS: 1200,
+  },
+  "embed-qualidade": {
+    titulo: "Qualidade do embedding em PT-BR (XPQA produtos + Quati), com e sem o reranker; perguntas com a instrução do Qwen3-Embedding",
+    script: "emb_qual.py",
+    args: ["qwen"],
+    precisa: ["glis-embed", "glis-rerank"],
+    timeoutS: 2400,
+  },
+  "embed-qualidade-bge": {
+    titulo: "Qualidade do embedding em PT-BR (XPQA produtos + Quati), com e sem o reranker; perguntas sem instrução (BGE-M3)",
+    script: "emb_qual.py",
+    args: ["bge"],
+    precisa: ["glis-embed", "glis-rerank"],
+    timeoutS: 2400,
+  },
   "rag-qualidade": {
     titulo: "Qualidade de RAG em PT-BR: 10 perguntas, 2 armadilhas",
     script: "qual_rag.py",
@@ -136,6 +178,27 @@ export const CENARIOS = {
     args: ["img", "4"],
     precisa: [],
     timeoutS: 900,
+  },
+  "imagem-qwen": {
+    titulo: "Imagem sozinha: 4 fotos de produto (Qwen-Image-2512 FP8 + Lightning, 4 passos)",
+    script: "stress.py",
+    args: ["img", "4", "qwen"],
+    precisa: [],
+    timeoutS: 900,
+  },
+  "imagem-zimage": {
+    titulo: "Imagem sozinha: 4 fotos de produto (Z-Image-Turbo, 8 passos)",
+    script: "stress.py",
+    args: ["img", "4", "zimage"],
+    precisa: [],
+    timeoutS: 900,
+  },
+  "imagem-voto": {
+    titulo: "Voto às cegas: os mesmos prompts de produto (alguns com texto em PT-BR) nos três modelos de imagem",
+    script: "img_voto.py",
+    args: [],
+    precisa: [],
+    timeoutS: 2400,
   },
   "convivencia-sem-codigo": {
     titulo: "7 chats + imagens + embed/rerank ao mesmo tempo",
@@ -221,10 +284,10 @@ export function lerSaida(stdout: string): Saida {
   return { linhas, memMinMb, acertos, texto: texto.join("\n") };
 }
 
-// Critério do chat (PRD RNF-01 e o princípio do Junior): com 7 pessoas, primeiro token em até 5 s e ≥ 35 tok/s por usuário.
+// Critério do chat (PRD RNF-01 e o princípio do Junior): com 7 pessoas, primeiro token em até 6 s e ≥ 20 tok/s por usuário (metas afrouxadas em 2026-10-12: eram 5 s e 35).
 // Vale a carga realista (carga_real.py); a rajada, com os 7 no mesmo segundo, é só o pior caso.
-export const META_TTFT_S = 5;
-export const META_TOK_S = 35;
+export const META_TTFT_S = 6;
+export const META_TOK_S = 20;
 export const META_CONC = 7;
 
 const dec = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });

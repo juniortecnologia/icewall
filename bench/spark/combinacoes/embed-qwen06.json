@@ -1,0 +1,8 @@
+{
+  "titulo": "Embedding Qwen3-Embedding-0.6B + reranker 4B",
+  "descricao": "Só embedding e reranker 4B, sem chat: mede a qualidade da busca em PT-BR (emb_qual.py). Se buscar quase igual ao 4B, libera ~6 GB.",
+  "servicos": [
+    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.10", "Qwen_Qwen3-Embedding-0.6B"] },
+    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.10"] }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "titulo": "Embedding Qwen3-Embedding-4B (atual) + reranker 4B",
+  "descricao": "Só embedding e reranker 4B, sem chat: mede a qualidade da busca em PT-BR (emb_qual.py). Referência: é o embedding da glis-bench.",
+  "servicos": [
+    { "container": "glis-embed", "script": "serve-pool.sh", "args": ["embed", "0.10"] },
+    { "container": "glis-rerank", "script": "serve-pool.sh", "args": ["rerank", "0.10"] }
+  ]
+}

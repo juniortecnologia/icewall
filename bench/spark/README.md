@@ -9,6 +9,8 @@ Estes scripts vieram de `~/glis-bench` no Spark (9/10/2026), onde foi medida a p
 | `ctx_test.py` | Contexto longo (~17k, ~34k, ~57k tokens), frio e com o cache de prefixo quente. |
 | `stress.py` | Imagem no ComfyUI (FLUX.2 klein 4B, 4 passos) sozinha ou com chat, código e RAG juntos. |
 | `soak.py` | A configuração inteira por N segundos: rajadas de 7 ou 10 chats, agente de código, imagens e embed/rerank. |
+| `emb_qual.py` | Qualidade de busca do embedding em PT-BR (XPQA produtos e Quati), nDCG@10 e acerto@10 com e sem o reranker; usa o venv da glis-bench (numpy, pyarrow) e os dados em `~/glis-bench/dados`. |
+| `img_voto.py` | Os mesmos 8 prompts de produto em FLUX.2 klein, Qwen-Image-2512 e Z-Image-Turbo, mesma semente, para o voto às cegas. `stress.py` e `carga_real.py --img-model` escolhem o modelo de imagem. |
 | `gate.py` / `gate_test.py` | Pausa o agente de código (vLLM `/pause`) enquanto há chat ou imagem ativos; A/B do efeito. |
 | `serve-*.sh`, `subir-tudo.sh` | Sobem os containers `glis-*` (chat :8000, código :8001, embed :8002, rerank :8003) com a imagem `nvcr.io/nvidia/vllm:26.09-py3`. |
 
