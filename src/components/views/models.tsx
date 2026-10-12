@@ -37,7 +37,9 @@ export function ModelsView() {
         {tiers.map((t) => (
           <Panel key={t.name} title={`Nível ${t.name}`}>
             <div className="wide text-[17px] font-medium">{t.model}</div>
-            <div className="mt-1 text-[12px] text-ink-3">fallback: {t.fallback.join(", ") || "nenhum"}</div>
+            <div className="mt-1 text-[12px] text-ink-3">
+              {t.backend === "ollama" ? `fallback: ${t.fallback.join(", ") || "nenhum"}` : `no vLLM (backend ${t.backend})`}
+            </div>
           </Panel>
         ))}
       </div>

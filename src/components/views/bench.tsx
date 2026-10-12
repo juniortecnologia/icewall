@@ -132,8 +132,10 @@ function WeightsPanel({ weights }: { weights: Weights }) {
 }
 
 function ApplyTier({ model, tiers }: { model: string; tiers: B["tiers"] }) {
-  const [tier, setTier] = useState("fast");
+  // Só vêm os níveis do Ollama: um nível no vLLM (o fast do Glis) não troca de modelo por aqui.
+  const [tier, setTier] = useState(() => tiers[0]?.name ?? "");
   const [diff, setDiff] = useState<{ before: string; after: string } | null>(null);
+  if (!tiers.length) return null;
   const current = tiers.find((t) => t.name === tier)?.model;
   if (current === model) return <span className="text-[12px] text-ink-3">é o {tier}</span>;
   return (

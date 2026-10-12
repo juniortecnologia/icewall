@@ -8,7 +8,7 @@ import type {
   SecuritySnapshot,
   UpdatesSnapshot,
 } from "@/lib/types";
-import { benchRows, benchWeights, readModelsJson } from "./bench/models-json";
+import { benchRows, benchWeights, readModelsJson, tierBackend } from "./bench/models-json";
 import { leaderboard } from "./bench/leaderboard";
 import { listTasks } from "./bench/tasks";
 import { getDb, schema } from "./db/client";
@@ -274,7 +274,7 @@ export function containers() {
 export function models() {
   const ollama = getSnapshot<OllamaSnapshot>("ollama");
   const cfg = readModelsJson();
-  const tiers = Object.entries(cfg?.tiers ?? {}).map(([name, t]) => ({ name, model: t.model, fallback: t.fallback ?? [] }));
+  const tiers = Object.entries(cfg?.tiers ?? {}).map(([name, t]) => ({ name, model: t.model, fallback: t.fallback ?? [], backend: tierBackend(cfg!, name) }));
   const usage = getDb()
     .select({
       model: schema.delegateRuns.model,
@@ -288,6 +288,14 @@ export function models() {
   return { ollama, tiers, keepAlive: cfg?.keep_alive ?? null, usage, board: leaderboard(benchRows(), benchWeights()) };
 }
 
+function ollamaTiers() {
+  const cfg = readModelsJson();
+  if (!cfg) return [];
+  return Object.entries(cfg.tiers)
+    .filter(([name]) => tierBackend(cfg, name) === "ollama")
+    .map(([name, t]) => ({ name, model: t.model }));
+}
+
 export function bench() {
   const db = getDb();
   return {
@@ -296,7 +304,8 @@ export function bench() {
     board: leaderboard(benchRows(), benchWeights()),
     weights: benchWeights(),
     models: getSnapshot<OllamaSnapshot>("ollama")?.data?.models.filter((m) => m.capabilities.includes("completion")).map((m) => m.name) ?? [],
-    tiers: Object.entries(readModelsJson()?.tiers ?? {}).map(([name, t]) => ({ name, model: t.model })),
+    // Só os níveis do Ollama: o ranking e o "Aplicar no models.json" não valem para um nível no vLLM.
+    tiers: ollamaTiers(),
     spark: {
       combinacoes: lerCombinacoes(),
       cenarios: Object.entries(CENARIOS).map(([id, c]) => ({ id, titulo: c.titulo, precisa: c.precisa })),

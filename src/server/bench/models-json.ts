@@ -9,8 +9,14 @@ import { DEFAULT_WEIGHTS, leaderboard, type ResultRow, type Weights } from "./le
 
 interface ModelsJson {
   keep_alive?: string;
-  tiers: Record<string, { model: string; fallback?: string[]; [k: string]: unknown }>;
+  backend?: string;
+  tiers: Record<string, { model: string; fallback?: string[]; backend?: string; [k: string]: unknown }>;
   [k: string]: unknown;
+}
+
+/** Onde o nível roda: o "backend" do nível ou, sem ele, o do topo (padrão "ollama", como na skill). */
+export function tierBackend(cfg: ModelsJson, tier: string): string {
+  return cfg.tiers[tier]?.backend ?? cfg.backend ?? "ollama";
 }
 
 export function readModelsJson(): ModelsJson | null {
@@ -27,6 +33,8 @@ export function setTierModel(tier: string, model: string, dryRun: boolean): { be
   const cfg = JSON.parse(raw) as ModelsJson;
   const t = cfg.tiers[tier];
   if (!t) throw new Error(`nível desconhecido: ${tier}`);
+  // O ranking mede modelos do Ollama; um nível no vLLM (o fast no Glis) troca de modelo no servidor, não aqui.
+  if (tierBackend(cfg, tier) !== "ollama") throw new Error(`o nível ${tier} roda no vLLM (backend ${tierBackend(cfg, tier)}), não no Ollama`);
   const before = JSON.stringify({ [tier]: { model: t.model, fallback: t.fallback ?? [] } });
   if (t.model !== model) {
     const fallback = [t.model, ...(t.fallback ?? []).filter((m) => m !== model && m !== t.model)];
@@ -70,7 +78,7 @@ export function benchRows(): ResultRow[] {
 export function benchRecs(): Rec[] {
   const cfg = readModelsJson();
   const fast = cfg?.tiers.fast?.model;
-  if (!fast) return [];
+  if (!fast || tierBackend(cfg, "fast") !== "ollama") return [];
   const board = leaderboard(benchRows(), benchWeights()).filter((s) => s.qualityRuns >= 7);
   const top = board[0];
   const current = board.find((s) => s.model === fast);
