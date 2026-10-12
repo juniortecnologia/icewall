@@ -40,6 +40,42 @@ export function TokensView() {
         <Readout label="Sessões" value={d.sessions} sub={`subagentes: ${compact(d.sidechainOutput)} de saída`} />
       </section>
 
+      {d.jevRoi && (
+        <section className="mb-5 rounded-lg border border-aurora-dim/60 bg-surface p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="text-[13px] font-semibold text-aurora">Consciência JEV: ROI & Economia Inteligente</span>
+              <p className="text-[12px] text-ink-3">Balanço das decisões e auditorias da Jev sobre o consumo de tokens</p>
+            </div>
+            <span className="rounded bg-aurora-dim/20 px-2 py-0.5 text-[11px] font-mono text-aurora">
+              {d.jevRoi.totalJudgments} julgamentos realizados
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
+            <Readout
+              label="Economia direta de tokens"
+              value={compact(d.jevRoi.tokensSavedByJev)}
+              sub="Gerados no Spark em tarefas validadas"
+            />
+            <Readout
+              label="Tokens gastos na Jev"
+              value={compact(d.jevRoi.jevTokensSpent)}
+              sub="Custo do TypeSafe para auditar e decidir"
+            />
+            <Readout
+              label="Saldo líquido economizado"
+              value={compact(d.jevRoi.netTokensSaved)}
+              sub={`${compact(Math.round(d.jevRoi.netTokensSaved / 3.5))} palavras evitadas na nuvem`}
+            />
+            <Readout
+              label="Taxa de assertividade"
+              value={`${d.jevRoi.worthRatio}%`}
+              sub={`${d.jevRoi.worthyCount} de ${d.jevRoi.delegationsEvaluated} delegações aprovadas`}
+            />
+          </div>
+        </section>
+      )}
+
       <Panel title="Por dia: saída do Claude e tokens escritos pelos modelos locais">
         <div className="h-64" role="img" aria-label="Tokens por dia">
           <ResponsiveContainer width="100%" height="100%">

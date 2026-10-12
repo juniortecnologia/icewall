@@ -215,7 +215,54 @@ export function tokens(days: number) {
     .where(and(gte(r.ts, since), eq(r.exitCode, 0), sql`coalesce(${r.label}, '') != 'bench'`))
     .groupBy(rday)
     .all();
-  return { days, daily, byModel, byProject, sessions, sidechainOutput: sidechain, delegatedDaily };
+
+  // ROI e inteligência do JEV: cálculo de tokens economizados e decisões tomadas
+  const j = schema.jevJudgments;
+  const jevStats = db
+    .select({
+      totalJudgments: sql<number>`count(*)`,
+      delegationJudgments: sql<number>`sum(case when ${j.subjectKind} = 'delegation' then 1 else 0 end)`,
+      inputCost: sql<number>`coalesce(sum(${j.inputTokens}), 0)`,
+      outputCost: sql<number>`coalesce(sum(${j.outputTokens}), 0)`,
+    })
+    .from(j)
+    .get();
+
+  // Delegações que a Jev julgou como vantajosas (worth = true)
+  const answers = answersByKind("delegation");
+  let tokensSavedByJev = 0;
+  let delegationsEvaluated = 0;
+  let worthyCount = 0;
+
+  const relevantRuns = db
+    .select({ runId: r.runId, evalTokens: r.evalTokens, exitCode: r.exitCode })
+    .from(r)
+    .where(and(gte(r.ts, since), sql`coalesce(${r.label}, '') != 'bench'`))
+    .all();
+
+  for (const run of relevantRuns) {
+    const a = answers.get(run.runId);
+    if (!a) continue;
+    delegationsEvaluated++;
+    const worth = a.worth_delegating?.type === "noul" ? a.worth_delegating.noul >= 0.5 : null;
+    if (worth && run.exitCode === 0) {
+      worthyCount++;
+      tokensSavedByJev += run.evalTokens ?? 0;
+    }
+  }
+
+  const jevRoi = {
+    totalJudgments: jevStats?.totalJudgments ?? 0,
+    delegationJudgments: jevStats?.delegationJudgments ?? 0,
+    jevTokensSpent: (jevStats?.inputCost ?? 0) + (jevStats?.outputCost ?? 0),
+    tokensSavedByJev,
+    delegationsEvaluated,
+    worthyCount,
+    worthRatio: delegationsEvaluated > 0 ? Math.round((worthyCount / delegationsEvaluated) * 100) : 0,
+    netTokensSaved: Math.max(0, tokensSavedByJev - ((jevStats?.inputCost ?? 0) + (jevStats?.outputCost ?? 0))),
+  };
+
+  return { days, daily, byModel, byProject, sessions, sidechainOutput: sidechain, delegatedDaily, jevRoi };
 }
 
 export function system() {
