@@ -1,33 +1,48 @@
 @import "tailwindcss";
 
-/* ICEWALL: painel escuro de operador. Gelo = o que é medido; aurora = o que a Jev julga. */
+/* ICEWALL: Painel Operacional SaaS & Consciência de IA (JEV) */
+/* Paleta Neutra e Confortável (Slate/Zinc descansado, sem fadiga visual) */
 :root {
   color-scheme: dark;
-  --bg: #0c141f;
-  --surface: #131d2b;
-  --surface-2: #1a2738;
-  --surface-3: #22324a;
-  --line: #263a52;
-  --line-soft: #1d2d42;
-  --ink: #e3eef6;
-  --ink-2: #9db2c6;
-  --ink-3: #6b8199;
-  --ice: #8fdcf5;
-  --ice-dim: #3b6f86;
-  --aurora: #a99cff;
-  --aurora-dim: #4a4380;
-  /* status: fixos, sempre com ícone + rótulo */
-  --good: #2fbf71;
-  --warning: #fab219;
-  --serious: #ec835a;
-  --critical: #e5484d;
-  /* categórico (dados de vários modelos), validado sobre --surface */
-  --s1: #3987e5;
-  --s2: #d95926;
-  --s3: #199e70;
-  --s4: #c98500;
-  --s5: #d55181;
-  --s6: #9085e9;
+  /* Superfícies neutras de alto conforto */
+  --bg: #090d16;
+  --surface: #0f172a;
+  --surface-2: #162036;
+  --surface-3: #1e2b46;
+  --surface-hover: #243454;
+  
+  /* Linhas e separadores suaves */
+  --line: #202d45;
+  --line-soft: #172236;
+  
+  /* Textos equilibrados (alto contraste legível, sem reflexos ofuscantes) */
+  --ink: #f1f5f9;
+  --ink-2: #94a3b8;
+  --ink-3: #64748b;
+  
+  /* Acentos refinados */
+  --ice: #38bdf8;
+  --ice-dim: #0369a1;
+  --ice-glow: rgba(56, 189, 248, 0.12);
+  
+  /* Consciência JEV: Índigo/Violeta sofisticado */
+  --aurora: #818cf8;
+  --aurora-dim: #4338ca;
+  --aurora-glow: rgba(129, 140, 248, 0.12);
+  
+  /* Status harmonizados */
+  --good: #10b981;
+  --warning: #f59e0b;
+  --serious: #f97316;
+  --critical: #ef4444;
+  
+  /* Séries categóricas equilibradas */
+  --s1: #38bdf8;
+  --s2: #f97316;
+  --s3: #10b981;
+  --s4: #fbbf24;
+  --s5: #ec4899;
+  --s6: #818cf8;
 }
 
 @theme inline {
@@ -48,7 +63,7 @@
   --color-warning: var(--warning);
   --color-serious: var(--serious);
   --color-critical: var(--critical);
-  --font-sans: var(--font-archivo);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains);
 }
 
@@ -59,20 +74,21 @@ body {
 }
 
 body {
-  font-family: var(--font-archivo), system-ui, sans-serif;
+  font-family: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+  letter-spacing: -0.011em;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Leituras de instrumento: Archivo expandida, numerais tabulares. */
+/* Leituras de métricas: proporções naturais, sem esticamento artificial */
 .readout {
-  font-stretch: 125%;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
 }
 .wide {
-  font-stretch: 112%;
+  letter-spacing: -0.02em;
 }
 .tnum {
   font-variant-numeric: tabular-nums;
@@ -81,21 +97,24 @@ body {
 :focus-visible {
   outline: 2px solid var(--ice);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 ::selection {
-  background: var(--ice-dim);
+  background: rgba(56, 189, 248, 0.25);
+  color: #fff;
 }
 
-/* Pulso só no indicador "ao vivo"; respeita quem pediu menos movimento. */
+/* Pulso sutil no indicador ao vivo */
 @keyframes live {
   0%,
   100% {
     opacity: 1;
+    transform: scale(1);
   }
   50% {
-    opacity: 0.35;
+    opacity: 0.4;
+    transform: scale(0.92);
   }
 }
 .live-dot {
@@ -107,7 +126,7 @@ body {
   }
 }
 
-/* Barra de rolagem discreta nas tabelas largas */
+/* Barra de rolagem discreta */
 .scroll-x {
   overflow-x: auto;
   scrollbar-width: thin;

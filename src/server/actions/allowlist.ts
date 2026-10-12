@@ -1,6 +1,6 @@
 import "server-only";
 import type { DockerSnapshot, OllamaSnapshot } from "@/lib/types";
-import { setTierModel } from "../bench/models-json";
+import { setKeepAlive, setTierModel } from "../bench/models-json";
 import { getDb, schema } from "../db/client";
 import { addEvent, getSnapshot } from "../lib/store";
 import { collectDocker } from "../spark/collectors/docker";
@@ -19,7 +19,8 @@ export type ActionId =
   | "model.pull"
   | "model.source.set"
   | "model.delete"
-  | "tier.set";
+  | "tier.set"
+  | "keepalive.set";
 
 interface ActionDef {
   label: string;
@@ -191,6 +192,15 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
       if (!model) throw new Error("falta o modelo");
       const diff = setTierModel(tier, requireModel(model), false);
       return `${diff.before}\n→ ${diff.after}`;
+    },
+  },
+  "keepalive.set": {
+    label: "Ajustar keep_alive (models.json)",
+    mutating: true,
+    run: async (keepAlive) => {
+      if (!keepAlive) throw new Error("falta o tempo de keep_alive");
+      const diff = setKeepAlive(keepAlive);
+      return `${diff.before} → ${diff.after}`;
     },
   },
 };

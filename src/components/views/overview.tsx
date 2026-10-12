@@ -6,6 +6,7 @@ import { ago, bytes, compact, gb, num, pct, seconds, stateLabel } from "@/lib/fo
 import type { HealthSnapshot, OllamaLoaded } from "@/lib/types";
 import { SERIES } from "../charts";
 import { Button, Code, Empty, ErrorNote, Jev, Loading, PageHeader, Panel, Readout, Status, severityLevel, type Level } from "../ui";
+import { RecommendationApplyButton } from "../recommendation-apply-button";
 import { useQueryClient } from "@tanstack/react-query";
 
 type Overview = ReturnType<typeof overview>;
@@ -135,7 +136,10 @@ export function OverviewView() {
                       </div>
                       <p className="mt-1 max-w-[75ch] text-[13px] text-ink-2">{r.detail}</p>
                     </div>
-                    <Button onClick={() => dismiss(r.id)}>Dispensar</Button>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <RecommendationApplyButton id={r.id} action={r.action} />
+                      <Button onClick={() => dismiss(r.id)}>Dispensar</Button>
+                    </div>
                   </div>
                   {r.action && (
                     <div className="mt-2">

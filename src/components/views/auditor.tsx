@@ -5,6 +5,7 @@ import type { auditor } from "@/server/queries";
 import { send, useLive } from "@/lib/api";
 import { ago, compact, dateTime } from "@/lib/format";
 import { Button, Code, Empty, ErrorNote, Jev, yesNo, Loading, PageHeader, Panel, Readout, Segmented, Status, Table, severityLevel } from "../ui";
+import { RecommendationApplyButton } from "../recommendation-apply-button";
 
 type A = ReturnType<typeof auditor>;
 type AnswerJson = Record<string, { type: string; choice?: string; noul?: number; score?: number; confidence?: number }>;
@@ -108,9 +109,10 @@ export function AuditorView() {
                     </div>
                     <p className="mt-1 max-w-[80ch] text-[13px] text-ink-2">{r.detail}</p>
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {r.status === "open" ? (
                       <>
+                        <RecommendationApplyButton id={r.id} action={r.action} />
                         <Button onClick={() => setStatus(r.id, "done")}>Marcar como feito</Button>
                         <Button onClick={() => setStatus(r.id, "dismissed")}>Dispensar</Button>
                       </>

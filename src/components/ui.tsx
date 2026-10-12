@@ -7,8 +7,8 @@ export function PageHeader({ title, sub, right }: { title: string; sub?: ReactNo
   return (
     <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="wide text-[26px] font-semibold leading-tight tracking-tight">{title}</h1>
-        {sub && <p className="mt-1 max-w-[70ch] text-ink-2">{sub}</p>}
+        <h1 className="text-[26px] font-semibold leading-tight tracking-tight text-ink">{title}</h1>
+        {sub && <p className="mt-1 max-w-[70ch] text-[13.5px] text-ink-2">{sub}</p>}
       </div>
       {right}
     </header>
@@ -33,18 +33,20 @@ export function Panel({
 }) {
   return (
     <section
-      className={`min-w-0 rounded-lg border bg-surface ${voice === "aurora" ? "border-aurora-dim/70" : "border-line-soft"} ${className}`}
+      className={`min-w-0 rounded-xl border bg-surface shadow-xs transition-shadow ${
+        voice === "aurora" ? "border-aurora-dim/60 shadow-aurora/5" : "border-line-soft"
+      } ${className}`}
     >
       {(title || aside) && (
-        <div className="flex items-center justify-between gap-3 border-b border-line-soft px-4 py-2.5">
-          <h2 className={`flex items-center gap-2 text-[13px] font-semibold ${voice === "aurora" ? "text-aurora" : "text-ink"}`}>
-            {voice === "aurora" && <ScanEye size={14} aria-hidden />}
+        <div className="flex items-center justify-between gap-3 border-b border-line-soft px-4.5 py-3">
+          <h2 className={`flex items-center gap-2 text-[13.5px] font-semibold ${voice === "aurora" ? "text-aurora" : "text-ink"}`}>
+            {voice === "aurora" && <ScanEye size={15} aria-hidden />}
             {title}
           </h2>
           {aside && <div className="text-[12px] text-ink-3">{aside}</div>}
         </div>
       )}
-      <div className={pad ? "p-4" : ""}>{children}</div>
+      <div className={pad ? "p-4.5" : ""}>{children}</div>
     </section>
   );
 }
@@ -87,14 +89,14 @@ export function Readout({
 }) {
   return (
     <div className="min-w-0">
-      <div className="text-[12px] text-ink-3">{label}</div>
-      <div className="mt-0.5 flex items-baseline gap-1">
-        <span className={`readout text-[26px] font-medium leading-none ${level && level !== "good" && level !== "info" ? LEVEL[level].cls : "text-ink"}`}>
+      <div className="text-[12px] font-medium text-ink-3">{label}</div>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        <span className={`readout text-[26px] font-semibold leading-none tracking-tight ${level && level !== "good" && level !== "info" ? LEVEL[level].cls : "text-ink"}`}>
           {value}
         </span>
-        {unit && <span className="text-[13px] text-ink-3">{unit}</span>}
+        {unit && <span className="text-[13px] font-medium text-ink-3">{unit}</span>}
       </div>
-      {sub && <div className="mt-1 truncate text-[12px] text-ink-2">{sub}</div>}
+      {sub && <div className="mt-1.5 truncate text-[12px] text-ink-2">{sub}</div>}
     </div>
   );
 }
@@ -162,24 +164,26 @@ export function Jev({ label, p, title }: { label: string; p?: number | null; tit
   return (
     <span
       title={title}
-      className="inline-flex items-center gap-1 rounded border border-aurora-dim bg-aurora/10 px-1.5 py-px text-[11.5px] text-aurora"
+      className="inline-flex items-center gap-1.5 rounded-md border border-aurora-dim/60 bg-aurora/10 px-2 py-0.5 text-[11.5px] font-medium text-aurora shadow-xs"
     >
       {label}
-      {typeof p === "number" && <span className="tnum text-aurora/70">{Math.round(p * 100)}%</span>}
+      {typeof p === "number" && <span className="tnum opacity-80">{Math.round(p * 100)}%</span>}
     </span>
   );
 }
 
 export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-md border border-line-soft bg-surface p-0.5">
+    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border border-line-soft bg-surface p-1 shadow-inner">
       {options.map((o) => (
         <button
           key={o.value}
           role="radio"
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`rounded px-2.5 py-1 text-[12px] ${value === o.value ? "bg-surface-3 text-ink" : "text-ink-2 hover:text-ink"}`}
+          className={`rounded-md px-3 py-1 text-[12px] font-medium transition-colors ${
+            value === o.value ? "bg-surface-2 text-ink shadow-xs" : "text-ink-2 hover:text-ink"
+          }`}
         >
           {o.label}
         </button>
@@ -203,16 +207,16 @@ export function Button({
 }) {
   const cls =
     tone === "primary"
-      ? "border-ice-dim bg-ice/15 text-ice hover:bg-ice/25"
+      ? "border-ice/30 bg-ice/15 text-ice hover:bg-ice/25 hover:border-ice/50 shadow-xs"
       : tone === "danger"
-        ? "border-critical/50 bg-critical/10 text-critical hover:bg-critical/20"
-        : "border-line bg-surface-2 text-ink hover:bg-surface-3";
+        ? "border-critical/40 bg-critical/10 text-critical hover:bg-critical/20 hover:border-critical/60 shadow-xs"
+        : "border-line bg-surface-2 text-ink hover:bg-surface-3 hover:border-line-soft shadow-xs";
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${cls}`}
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98] ${cls}`}
     >
       {children}
     </button>

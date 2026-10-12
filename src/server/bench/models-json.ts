@@ -49,6 +49,16 @@ export function setTierModel(tier: string, model: string, dryRun: boolean): { be
   return { before, after };
 }
 
+export function setKeepAlive(keepAlive: string): { before: string; after: string } {
+  const raw = fs.readFileSync(MODELS_JSON, "utf8");
+  const cfg = JSON.parse(raw) as ModelsJson;
+  const before = cfg.keep_alive ?? "padrão";
+  cfg.keep_alive = keepAlive;
+  fs.copyFileSync(MODELS_JSON, `${MODELS_JSON}.bak`);
+  fs.writeFileSync(MODELS_JSON, `${JSON.stringify(cfg, null, 2)}\n`);
+  return { before: String(before), after: keepAlive };
+}
+
 export function benchWeights(): Weights {
   return { ...DEFAULT_WEIGHTS, ...getSetting<Partial<Weights>>("bench:weights", {}) };
 }
