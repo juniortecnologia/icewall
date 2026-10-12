@@ -6,6 +6,8 @@ import { addEvent, getSnapshot } from "../lib/store";
 import { collectDocker } from "../spark/collectors/docker";
 import { collectOllama, ollamaFetch } from "../spark/collectors/ollama";
 import { shellArg, sparkExec } from "../spark/ssh";
+import { modelfileFromSource } from "../models/modelfile";
+import { getModelSources, setModelSource } from "../models/sources";
 
 export type ActionId =
   | "container.start"
@@ -15,6 +17,7 @@ export type ActionId =
   | "model.load"
   | "model.unload"
   | "model.pull"
+  | "model.source.set"
   | "model.delete"
   | "tier.set";
 
@@ -101,9 +104,74 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
     mutating: true,
     run: async (t) => {
       shellArg(t); // mesmo formato de nome aceito em qualquer outro lugar
-      const res = (await ollamaFetch("/api/pull", { method: "POST", headers: json, body: JSON.stringify({ model: t, stream: false }) }, 3_600_000)) as { status?: string };
+      const source = getModelSources()[t];
+      if (source) {
+        const wasLoaded = getSnapshot<OllamaSnapshot>("ollama")?.data?.loaded.some((model) => model.name === t) ?? false;
+        const current = (await ollamaFetch("/api/show", {
+          method: "POST",
+          headers: json,
+          body: JSON.stringify({ model: requireModel(t) }),
+        })) as { modelfile?: string };
+        if (typeof current.modelfile !== "string") throw new Error(`O Ollama não retornou o Modelfile de ${t}`);
+        const updatedModelfile = modelfileFromSource(current.modelfile, source);
+        await ollamaFetch("/api/pull", { method: "POST", headers: json, body: JSON.stringify({ model: source, stream: false }) }, 3_600_000);
+        const created = (await ollamaFetch(
+          "/api/create",
+          {
+            method: "POST",
+            headers: json,
+            body: JSON.stringify({ model: t, modelfile: updatedModelfile, stream: false }),
+          },
+          3_600_000,
+        )) as { status?: string };
+        if (wasLoaded) {
+          try {
+            await ollamaFetch(
+              "/api/generate",
+              { method: "POST", headers: json, body: JSON.stringify({ model: t, keep_alive: 0 }) },
+              300_000,
+            );
+            await ollamaFetch(
+              "/api/generate",
+              { method: "POST", headers: json, body: JSON.stringify({ model: t, keep_alive: "30m" }) },
+              300_000,
+            );
+          } catch (err) {
+            await collectOllama();
+            const message = err instanceof Error ? err.message : String(err);
+            throw new Error(`${t} foi recriado, mas não foi possível reiniciá-lo com a nova versão: ${message}`);
+          }
+        }
+        await collectOllama();
+        return `${t} recriado a partir de ${source}${wasLoaded ? " e carregado novamente" : ""}: ${created.status ?? "ok"}`;
+      }
+      let res: { status?: string };
+      try {
+        res = (await ollamaFetch(
+          "/api/pull",
+          { method: "POST", headers: json, body: JSON.stringify({ model: t, stream: false }) },
+          3_600_000,
+        )) as { status?: string };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (/pull model manifest.*file does not exist|manifest.*not found/i.test(message)) {
+          throw new Error(
+            `O registro configurado do Ollama não encontrou a tag "${t}". Esse modelo pode ser uma variante local; para atualizá-la, é necessário recriá-la a partir do nome e da tag publicados do modelo de origem.`,
+          );
+        }
+        throw err;
+      }
       await collectOllama();
       return res.status ?? "ok";
+    },
+  },
+  "model.source.set": {
+    label: "Configurar origem do modelo",
+    mutating: true,
+    run: async (t, source) => {
+      requireModel(t);
+      setModelSource(t, source?.trim() || undefined);
+      return source?.trim() ? `origem de ${t}: ${source.trim()}` : `origem de ${t} removida`;
     },
   },
   "model.delete": {

@@ -63,6 +63,7 @@ Os ganchos ficam no `~/.claude/settings.json` (valem para toda sessão do Claude
 - O servidor escuta só em `127.0.0.1`.
 - Rotas que alteram estado exigem o header `x-icewall: 1` e origem local (proteção contra CSRF).
 - As ações seguem uma allowlist: start/stop/restart/logs de container; load/unload/pull/delete de modelo; troca de nível no models.json. Tudo fica em `action_log`.
+- Variantes locais de modelos podem registrar a tag publicada de origem em **Detalhes técnicos** na tela Modelos. **Atualizar e recriar** baixa essa origem e recria a variante preservando o restante do Modelfile, incluindo parâmetros como `num_ctx`. O vínculo fica salvo nas configurações locais do ICEWALL; por exemplo, as variantes `qwen3.8-code:27b-128k` e `qwen3.8-code:27b-64k` usam `qwen3.8:27b`.
 - `apt upgrade` e reboot não são executados (o usuário não tem sudo sem senha). O painel mostra o comando.
 
 ## Serviço (systemd de usuário)

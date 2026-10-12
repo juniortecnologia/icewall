@@ -18,6 +18,7 @@ import { isSuccess, type AnswerMap } from "./jev/rules";
 import { CENARIOS, lerCombinacoes, META_CONC, META_TOK_S, META_TTFT_S, resumoCarga, type ResumoCarga } from "./bench/spark";
 import { custoJev } from "./crivo/store";
 import { getSnapshot, recentEvents } from "./lib/store";
+import { getModelSources } from "./models/sources";
 import { jobStates } from "./scheduler";
 
 const DAY = 86_400_000;
@@ -285,7 +286,14 @@ export function models() {
     .from(schema.delegateRuns)
     .groupBy(schema.delegateRuns.model)
     .all();
-  return { ollama, tiers, keepAlive: cfg?.keep_alive ?? null, usage, board: leaderboard(benchRows(), benchWeights()) };
+  return {
+    ollama,
+    tiers,
+    keepAlive: cfg?.keep_alive ?? null,
+    usage,
+    board: leaderboard(benchRows(), benchWeights()),
+    modelSources: getModelSources(),
+  };
 }
 
 function ollamaTiers() {
