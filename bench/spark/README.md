@@ -12,6 +12,7 @@ Estes scripts vieram de `~/glis-bench` no Spark (9/10/2026), onde foi medida a p
 | `emb_qual.py` | Qualidade de busca do embedding em PT-BR (XPQA produtos e Quati), nDCG@10 e acerto@10 com e sem o reranker; usa o venv da glis-bench (numpy, pyarrow) e os dados em `~/glis-bench/dados`. |
 | `img_voto.py` | Os mesmos 8 prompts de produto em FLUX.2 klein, Qwen-Image-2512 e Z-Image-Turbo, mesma semente, para o voto às cegas. `stress.py` e `carga_real.py --img-model` escolhem o modelo de imagem. |
 | `gate.py` / `gate_test.py` | Pausa o agente de código (vLLM `/pause`) enquanto há chat ou imagem ativos; A/B do efeito. |
+| `subir-glis.sh` | Produção do Glis (decisão de 12/10): chat+RAG+agente (Qwen3.6, MTP 2, prefill fatiado em 2048), embed e rerank a 0,10 cada. Portas presas a `127.0.0.1` e ao IP interno via `BIND`, Ollama descarregado, confere se alguma porta escuta em todas as interfaces. Não sobe o ComfyUI. |
 | `serve-*.sh`, `subir-tudo.sh` | Sobem os containers `glis-*` (chat :8000, código :8001, embed :8002, rerank :8003) com a imagem `nvcr.io/nvidia/vllm:26.09-py3`. |
 
 Os prompts usam o `PRD.md` da plataforma, que fica só no Spark (`~/glis-bench/PRD.md`), fora do git, por ser documento interno.
