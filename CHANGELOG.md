@@ -1,41 +1,92 @@
 # Changelog
 
-## v1.2.0 (2026-10-10)
+Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
 
-- **O Crivo vale para todos os projetos:** os ganchos saíram do `.claude/settings.local.json` do happy-team-chat e foram para o `~/.claude/settings.json`.
-  - A aba filtra por projeto e mostra o projeto de cada prompt e comando.
-  - Painel "Projetos": cada projeto aparece no primeiro gancho, e lá dá para desligar o Crivo nele (os ganchos respondem `{}` e não gravam nada).
-  - A descrição que a Jev recebe vem do README do projeto (título e primeiro parágrafo, ignorando README de template). Dá para escrever outra na aba; sem README, vai o nome da pasta.
-  - A área de teste escolhe o projeto e julga com a mesma descrição do gancho.
-  - Nova rota `POST /api/crivo/projetos` e filtro `GET /api/crivo?origem=`.
-- **Notificações do Claude Code:** `<task-notification>` (comando em segundo plano terminou) e `<agent-message` (relatório de subagente) chegam ao gancho como se fossem prompts. Agora passam sem a Jev, como "notificação", e não quebram a regra da resposta ao Claude. Antes, dois relatórios de subagente tinham sido barrados.
+O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)
+e o projeto adere ao [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v1.1.0 (2026-10-10)
+---
 
-- **Aba Crivo:** o Crivo deixou de ser um app separado (`~/Projects/crivo`, porta 4000) e virou uma aba do ICEWALL, com o histórico git das etapas 1–3.
-  - Portão de entrada com a Jev (passa, pede para o Claude perguntar antes ou barra) e portão de saída que registra comandos e arquivos.
-  - Ganchos em `/api/crivo/hooks/{prompt,tool}`, protegidos pelo header `x-icewall` e pela checagem de origem.
-  - Dados no `icewall.db` (31 prompts e 285 comandos importados do `crivo.db`).
-  - Custo da Jev do Crivo somado no Auditor.
-  - Guia em `docs/crivo/README.md`.
+## [v1.3.0] — 2026-10-13
 
-## v1.0.1 (2026-10-10)
+### 🚀 Adicionado
+- Multi-tenant SaaS com PostgreSQL (Tenants/Users/RBAC via Drizzle)
+- Auth JWT Edge + 2FA TOTP (<1ms, sem cold start de serverless)
+- Painel Admin (/settings): CRUD usuários, reset senha, revogação 2FA
+- Matriz RBAC (admin, operator, viewer) — `server/auth/admin.test.ts`
+- Trilha de auditoria (`saas_audit_logs`)
+- Webhooks de alerta via Discord/Slack/Email
+- Shell unificado ao vivo via WebSocket (`/api/terminal/exec`, alvo local ou remoto SSH)
+- Painel de servidores com seleção de clusters (Spark local + remotos)
+- Health check + métricas do servidor em tempo real
+- Pre-roteador preditivo JEV + painel ROI de tokens no auditor
+- Redesign tela de modelos: cards + recriação automática de variantes locais
+- Redesign visual: tema escuro, paleta neutra, botões arredondados
+- Botão "aplicar recomendação" em 1 clique (Crivo)
+- Dockerfile otimizado (multi-stage build para produção)
+- docker-compose.yml completo: Postgres + Redis + IceWALL em network isolado
 
-- **Recomendações que não saíam do painel:** "Verificar o Spark agora" (Auditor) relê segurança, updates e SO antes de auditar; antes só refazia as recomendações com o retrato antigo. A coleta de segurança passou de 1 h para 15 min, e o Auditor mostra quando o Spark foi lido.
-- **Login por senha no SSH:** passa a ser medido por uma tentativa de login sem chave a partir desta máquina (sem enviar senha), não só pelo grep nos arquivos do sshd. Isso pega configuração sem reload.
-- **Portas de container:** a recomendação não sugere mais o ufw, que o Docker ignora. Ela traz a regra na chain `DOCKER-USER` liberando só o IP desta máquina, ou a publicação em 127.0.0.1.
-- **Serviço do systemd:** `deploy/icewall.service`, unidade de usuário que sobe no boot (com linger) e reinicia se cair. O guia de operação está em `deploy/README.md`.
+### ⚡ Performance
+- JWT validação via edge runtime — sem cold start de serverless
+- Componentes UI otimizados com memoization (AppShell, NavContext)
 
-## v1.0.0 (2026-10-10)
+### 📝 Documentação
+- Instruções de delegação local ao Spark no Copilot (`copilot-instructions.md`)
 
-Primeira versão do painel.
+### 🧪 Testes (4 novas suítes)
+- `server/auth/admin.test.ts` — RBAC e funções admin
+- `server/auth/auth.test.ts` — JWT + TOTP lifecycle
+- `server/actions/recommendation-apply.test.ts` — validação do Crivo pré-apply
+- `server/jev/router.test.ts` — regras de roteamento preditivo
 
-- **Spark:** saúde a cada 15 s via `ssh spark` (GPU, memória unificada por consumidor, CPU, disco), com séries de 1 h a 7 dias.
-- **Modelos:** inventário e modelos carregados do Ollama, níveis do `models.json` e ações de carregar, descarregar, atualizar e remover.
-- **Containers:** estado, consumo, logs e ações de iniciar, parar e reiniciar.
-- **Sistema:** SO, kernel, driver/CUDA, runtimes (Docker, vLLM, container toolkit), updates do apt, portas, sshd, ufw e falhas de login SSH.
-- **Delegações:** cada `ollama-delegate run` e o veredito da revisão (`ollama-delegate review`), com acerto por modelo, nível, tipo de tarefa e projeto, causas de falha e gargalos.
-- **Tokens:** uso do Claude lido dos transcripts do Claude Code, taxa de cache e tokens escritos no Spark.
-- **Auditor:** a Jev (TypeSafe) julga delegações, pacotes e portas expostas; regras em código geram as recomendações. Julgamentos ficam em cache, com custo visível.
-- **Benchmarks:** suíte de qualidade com 7 tarefas e soluções de referência validadas, rodando no pipeline real do delegate-local; performance (carga, 1º token, tok/s com 1k/8k/32k e memória pelo nvidia-smi); score com pesos ajustáveis e aplicação no `models.json`.
-- **Segurança do painel:** só em 127.0.0.1, header `x-icewall` com checagem de origem nas rotas que alteram estado, ações por allowlist e registro em `action_log`.
+---
+
+## [v1.2.0] — 2026-10-10
+
+### 🚀 Adicionado
+- **Crivo para todos os projetos** — ganchos saem de settings.local.json e vão para ~/.claude/settings.json
+- **Painel Projetos** na aba Crivo: toggle desligar Crivo por projeto
+- Descrição automática: do README do cwd, da aba ou nome da pasta
+- Notificações do Claude Code passam sem quebrar regra da resposta ao Jev
+
+### 🔧 Mudado
+- Drizzle schema: tabela `crivo_projetos` mapeia projetos → regras
+- Configuração por projeto estruturado em `src/server/crivo/projetos.ts`
+
+### 📝 Documentação
+- Guia completo do Crivo em `docs/crivo/README.md` (regras, hooks, rotas)
+- Atualizado README principal e CHANGELOG.md
+
+---
+
+## [v1.1.0] — 2026-10-10
+
+### 📝 Documentação
+- Guia completo do Crivo: regras, ganchos (hooks), rotas, dados e histórico
+- `docs/crivo/README.md` com pipeline de exemplos passo a passo
+- Atualizado README principal e CHANGELOG.md
+
+---
+
+## [v1.0.0] — 2026-10-06
+
+### 🚀 Adicionado
+- **IceWALL Dashboard** — painel central com login, server cluster view via Drizzle ORM SQLite
+- **Bancada (bench de agentes LLM)** — testes com tarefas progressivas, runner, spark
+- **MTP + Nemotron** pipeline embedding e reranker com cache na memória
+- **Aba Crivo** — avaliação automática de prompts/agentes (17 regras em `src/server/crivo/`)
+- Systemd service para deploy automático em servidores Linux
+
+### 📦 Build & Configuração
+- Dockerfile + docker-compose.yml para ambiente de desenvolvimento
+- ESLint, TypeScript e Next.js configurados
+- Pacotes principais: @ai-sdk/*, ollama, drizzle, bcrypt
+
+---
+
+## Links
+
+| Versão | Link |
+|--------|------|
+| v1.0.0 → v1.3.0 (current) | [compare](https://github.com/juniortecnologia/icewall/compare/v1.0.0...HEAD) |
+| v1.2.0 → HEAD | [compare](https://github.com/juniortecnologia/icewall/compare/v1.2.0...HEAD) |

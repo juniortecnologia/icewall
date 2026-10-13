@@ -43,3 +43,7 @@ next-env.d.ts
 
 # ICEWALL
 /data/
+
+#Opencode
+.opencode*
+opencode*
