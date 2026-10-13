@@ -282,3 +282,71 @@ export const crivoProjetos = sqliteTable("crivo_projetos", {
   desligado: integer("desligado", { mode: "boolean" }).notNull().default(false),
   vistoEm: integer("visto_em").notNull(),
 });
+
+// ---------------------------------------------------------------------------------------------
+// SaaS Multi-tenant Architecture (PostgreSQL & SQLite compatibility)
+
+export const saasTenants = sqliteTable("saas_tenants", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  plan: text("plan").notNull().default("standard"),
+  createdAt: integer("created_at").notNull().default(now),
+  updatedAt: integer("updated_at").notNull().default(now),
+});
+
+export const saasUsers = sqliteTable(
+  "saas_users",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    email: text("email").notNull().unique(),
+    name: text("name").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    role: text("role").notNull().default("admin"),
+    twoFactorEnabled: integer("two_factor_enabled", { mode: "boolean" }).notNull().default(false),
+    twoFactorSecret: text("two_factor_secret"),
+    createdAt: integer("created_at").notNull().default(now),
+    updatedAt: integer("updated_at").notNull().default(now),
+  },
+  (t) => [index("saas_users_tenant").on(t.tenantId)],
+);
+
+export const saasClusters = sqliteTable(
+  "saas_clusters",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull().default("dgx-spark"), // 'dgx-spark', 'cloud-gpu', 'local-pc'
+    endpoint: text("endpoint").notNull(),
+    sshHost: text("ssh_host"),
+    sshPort: integer("ssh_port").default(22),
+    sshUser: text("ssh_user").default("junior"),
+    sshKey: text("ssh_key"),
+    status: text("status").notNull().default("online"), // 'online', 'offline', 'warning'
+    gpuModel: text("gpu_model").default("NVIDIA GB10 Blackwell (Spark)"),
+    totalMemoryGb: real("total_memory_gb").default(128),
+    activeModelsCount: integer("active_models_count").default(0),
+    createdAt: integer("created_at").notNull().default(now),
+    updatedAt: integer("updated_at").notNull().default(now),
+  },
+  (t) => [index("saas_clusters_tenant").on(t.tenantId)],
+);
+
+export const saasAuditLogs = sqliteTable(
+  "saas_audit_logs",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    userId: text("user_id"),
+    userName: text("user_name"),
+    action: text("action").notNull(),
+    detail: text("detail"),
+    ip: text("ip"),
+    createdAt: integer("created_at").notNull().default(now),
+  },
+  (t) => [index("saas_audit_logs_tenant").on(t.tenantId), index("saas_audit_logs_created").on(t.createdAt)],
+);
+
+

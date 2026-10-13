@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import { Nav } from "@/components/nav";
+import { AppShell } from "@/components/app-shell";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
@@ -17,10 +17,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="pt-BR" className={`${inter.variable} ${jetbrains.variable}`}>
       <body className="min-h-dvh">
         <Providers>
-          <div className="flex min-h-dvh flex-col md:flex-row">
-            <Nav />
-            <main className="min-w-0 flex-1 px-4 py-5 md:px-8 md:py-7">{children}</main>
-          </div>
+          <AppShell>{children}</AppShell>
         </Providers>
       </body>
     </html>

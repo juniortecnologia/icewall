@@ -1,0 +1,75 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: icewall-app
+    restart: unless-stopped
+    ports:
+      - "4310:4310"
+    environment:
+      - NODE_ENV=production
+      - PORT=4310
+      - HOSTNAME=0.0.0.0
+      - DATABASE_URL=postgres://icewall:icewall_secret@postgres:5432/icewall_saas
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=icewall-super-secure-jwt-secret-key-change-in-prod
+      - ICEWALL_DB=/app/data/icewall.db
+      - ICEWALL_INIT_ADMIN=true
+      - ICEWALL_ADMIN_EMAIL=admin@icewall.ai
+      - ICEWALL_ADMIN_PASSWORD=AdminPass123!
+    volumes:
+      - icewall_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - icewall-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: icewall-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=icewall
+      - POSTGRES_PASSWORD=icewall_secret
+      - POSTGRES_DB=icewall_saas
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U icewall -d icewall_saas"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - icewall-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: icewall-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - icewall-net
+
+volumes:
+  postgres_data:
+  redis_data:
+  icewall_data:
+
+networks:
+  icewall-net:
+    driver: bridge
