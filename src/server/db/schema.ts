@@ -349,4 +349,45 @@ export const saasAuditLogs = sqliteTable(
   (t) => [index("saas_audit_logs_tenant").on(t.tenantId), index("saas_audit_logs_created").on(t.createdAt)],
 );
 
+// ---------------------------------------------------------------------------------------------
+// Fine-tune: treinos Unsloth rodando no Spark (GPU)
+
+export const fineTuneRuns = sqliteTable(
+  "fine_tune_runs",
+  {
+    runId: text("run_id").primaryKey(),
+    ts: integer("ts").notNull().default(now),
+    baseModel: text("base_model").notNull(),
+    method: text("method", { enum: ["lora", "qlora", "full"] }).notNull(),
+    datasetPath: text("dataset_path"),
+    paramsJson: text("params_json"), // JSON de hiperparâmetros (rank, alpha…)
+    status: text("status", { enum: ["pending", "queued", "training", "exporting", "deploying", "completed", "failed"] }).notNull().default("pending"),
+    lossHistory: text("loss_history", { mode: "json" }).$type<{ step: number; value: number }[]>(),
+    valLoss: real("val_loss"),
+    progressPct: integer("progress_pct").notNull().default(0),
+    epochsDone: integer("epochs_done").notNull().default(0),
+    totalEpochs: integer("total_epochs").notNull().default(0),
+    sparkPath: text("spark_path"), // /tmp/icewall-ft-{runId} no Spark
+    gpuMemUsedMib: real("gpu_mem_used_mib"),
+    gpuMemTotalMib: real("gpu_mem_total_mib"),
+    createdById: text("created_by_id"),
+    updatedAt: integer("updated_at").notNull().default(now),
+  },
+  (t) => [index("ft_status").on(t.status), index("ft_ts").on(t.ts)],
+);
+
+export const fineTuneExports = sqliteTable(
+  "fine_tune_exports",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    runId: text("run_id").notNull(),
+    outputName: text("output_name"), // tag da variante no Ollama (ex.: qwen3.6-finetuned-v1)
+    exportPath: text("export_path"), // caminho do GGUF no Spark
+    sizeBytes: integer("size_bytes"),
+    adapterPath: text("adapter_path"),
+    created_at: integer("created_at").notNull().default(now),
+  },
+  (t) => [index("ft_exports_run").on(t.runId)],
+);
+
 
