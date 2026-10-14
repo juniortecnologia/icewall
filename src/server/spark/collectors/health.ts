@@ -3,7 +3,7 @@ import type { ComputeApp, HealthSnapshot } from "@/lib/types";
 import { getDb, schema } from "../../db/client";
 import { putSnapshot, trackReachability } from "../../lib/store";
 import { parseComputeApps, parseDf, parseLoadavg, parseMeminfo, parseNvidiaGpu, parseSections } from "../../parsers";
-import { sparkExec } from "../ssh";
+import { execOnServer, serverIdByName } from "../../executor";
 
 const HEALTH_CMD = [
   "echo @@gpu@@; nvidia-smi --query-gpu=temperature.gpu,utilization.gpu,power.draw,clocks.sm --format=csv,noheader,nounits",
@@ -21,7 +21,15 @@ export function ollamaGpuBytes(apps: ComputeApp[]): number {
 }
 
 export async function collectHealth(): Promise<void> {
-  const res = await sparkExec(HEALTH_CMD);
+  // Migração incremental (Etapa 02): o coletor passa a usar o executor por
+  // servidor, resolvendo o Spark por nome no registro (não por constante).
+  const sparkId = serverIdByName("Spark");
+  if (sparkId === null) {
+    trackReachability("ssh", false, "Spark (SSH)", '[icewall] servidor "Spark" não encontrado no registro — cadastre em /servers');
+    putSnapshot("health", null, '[icewall] servidor "Spark" não encontrado no registro — cadastre em /servers');
+    return;
+  }
+  const res = await execOnServer(sparkId, HEALTH_CMD);
   const ok = res.code === 0 && res.stdout.includes("@@mem@@");
   trackReachability("ssh", ok, "Spark (SSH)", res.stderr.trim());
   if (!ok) {
