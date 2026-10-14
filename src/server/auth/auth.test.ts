@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { hashPassword, verifyPassword, signSessionToken, verifySessionToken } from "./crypto";
+import { hashPassword, verifyPassword } from "./crypto";
+import { signSession, verifySession } from "./jwt";
 import { generateTwoFactorSecret, getTwoFactorOtpAuthUrl, verifyTwoFactorToken } from "./totp";
 import { generateSync } from "otplib";
 
@@ -13,7 +14,7 @@ describe("SaaS Auth & Crypto", () => {
     expect(verifyPassword("WrongPassword", hashed)).toBe(false);
   });
 
-  it("should sign and verify valid session JWT tokens", () => {
+  it("should sign and verify valid session JWT tokens", async () => {
     const sessionPayload = {
       userId: "user_test_123",
       tenantId: "tenant_test_123",
@@ -23,17 +24,17 @@ describe("SaaS Auth & Crypto", () => {
       twoFactorPassed: true,
     };
 
-    const token = signSessionToken(sessionPayload);
+    const token = await signSession(sessionPayload);
     expect(typeof token).toBe("string");
 
-    const decoded = verifySessionToken(token);
+    const decoded = await verifySession(token);
     expect(decoded).not.toBeNull();
     expect(decoded?.userId).toBe("user_test_123");
     expect(decoded?.email).toBe("test@icewall.ai");
     expect(decoded?.twoFactorPassed).toBe(true);
   });
 
-  it("should reject tampered JWT tokens", () => {
+  it("should reject tampered JWT tokens", async () => {
     const sessionPayload = {
       userId: "user_1",
       tenantId: "tenant_1",
@@ -42,10 +43,10 @@ describe("SaaS Auth & Crypto", () => {
       role: "admin",
       twoFactorPassed: false,
     };
-    const token = signSessionToken(sessionPayload);
+    const token = await signSession(sessionPayload);
     const tampered = token.slice(0, -5) + "abcde";
 
-    expect(verifySessionToken(tampered)).toBeNull();
+    expect(await verifySession(tampered)).toBeNull();
   });
 });
 

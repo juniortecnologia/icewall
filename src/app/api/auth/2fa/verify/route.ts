@@ -4,7 +4,7 @@ import { getDb } from "@/server/db/client";
 import { saasUsers } from "@/server/db/schema";
 import { getSession, SESSION_COOKIE_NAME } from "@/server/auth/session";
 import { verifyTwoFactorToken } from "@/server/auth/totp";
-import { signSessionEdge } from "@/server/auth/jwt-edge";
+import { signSession } from "@/server/auth/jwt";
 
 export async function POST(req: Request) {
   try {
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     }
 
     // Promove a sessão para twoFactorPassed = true
-    const updatedToken = await signSessionEdge({
+    const updatedToken = await signSession({
       ...session,
       twoFactorPassed: true,
     });

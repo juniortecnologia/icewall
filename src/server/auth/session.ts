@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { verifySessionEdge, type UserSession } from "./jwt-edge";
+import { verifySession, type UserSession } from "./jwt";
 
 export const SESSION_COOKIE_NAME = "icewall_session";
 
@@ -8,7 +8,7 @@ export async function getSession(): Promise<UserSession | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   if (!token) return null;
-  return verifySessionEdge(token);
+  return verifySession(token);
 }
 
 /** Check if current user is authenticated and has passed 2FA (if enabled) */

@@ -4,7 +4,7 @@ import { getDb } from "@/server/db/client";
 import { saasUsers } from "@/server/db/schema";
 import { ensureInitialTenantAndAdmin } from "@/server/auth/init";
 import { verifyPassword } from "@/server/auth/crypto";
-import { signSessionEdge } from "@/server/auth/jwt-edge";
+import { signSession } from "@/server/auth/jwt";
 import { SESSION_COOKIE_NAME } from "@/server/auth/session";
 
 export async function POST(req: Request) {
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
     // Se o usuário tem 2FA ativado, cria sessão temporária com twoFactorPassed = false
     const twoFactorRequired = Boolean(user.twoFactorEnabled);
-    const sessionToken = await signSessionEdge({
+    const sessionToken = await signSession({
       userId: user.id,
       tenantId: user.tenantId,
       email: user.email,

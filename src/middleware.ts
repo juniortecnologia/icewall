@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME } from "./server/auth/session";
-import { verifySessionEdge } from "./server/auth/jwt-edge";
+import { verifySession } from "./server/auth/jwt";
 
 const PUBLIC_PATHS = ["/login", "/login/2fa", "/api/auth/login", "/api/auth/logout", "/api/auth/2fa/verify"];
 
@@ -18,7 +18,7 @@ export async function middleware(req: NextRequest) {
 
   const isPublic = PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(path + "/"));
   const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
-  const session = token ? await verifySessionEdge(token) : null;
+  const session = token ? await verifySession(token) : null;
 
   // Se o usuário não está autenticado e tenta acessar rota protegida
   if (!session && !isPublic) {

@@ -1,10 +1,4 @@
 import crypto from "node:crypto";
-import jwt from "jsonwebtoken";
-import type { UserSession } from "./jwt-edge";
-
-export type { UserSession };
-
-const JWT_SECRET = process.env.JWT_SECRET!;
 
 /** Hash password using standard PBKDF2 with SHA-512 (zero external binaries required) */
 export function hashPassword(password: string): string {
@@ -22,20 +16,5 @@ export function verifyPassword(password: string, storedHash: string): boolean {
     return crypto.timingSafeEqual(Buffer.from(computedHash, "hex"), Buffer.from(originalHash, "hex"));
   } catch {
     return false;
-  }
-}
-
-/** Create signed JWT token */
-export function signSessionToken(session: UserSession, expiresIn = "7d"): string {
-  return jwt.sign(session, JWT_SECRET, { expiresIn } as jwt.SignOptions);
-}
-
-/** Verify and decode JWT token */
-export function verifySessionToken(token: string): UserSession | null {
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as UserSession;
-    return decoded;
-  } catch {
-    return null;
   }
 }

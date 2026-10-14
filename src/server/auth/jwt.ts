@@ -1,3 +1,8 @@
+/**
+ * Unified JWT implementation using WebCrypto (works in both Edge and Node runtimes).
+ * Replaces the dual implementation: jwt-edge.ts (WebCrypto) + crypto.ts (jsonwebtoken).
+ */
+
 export interface UserSession {
   userId: string;
   tenantId: string;
@@ -28,22 +33,35 @@ async function hmacSha256(data: string, secret: string): Promise<string> {
     enc.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign", "verify"]
   );
   const signature = await crypto.subtle.sign("HMAC", key, enc.encode(data));
   const binary = String.fromCharCode(...new Uint8Array(signature));
   return base64UrlEncode(binary);
 }
 
-export async function signSessionEdge(session: UserSession): Promise<string> {
+export interface JWTPayload extends UserSession {
+  exp: number;
+  iat: number;
+}
+
+/** Create signed JWT token (HS256) */
+export async function signSession(payload: UserSession, expiresInSeconds = 7 * 24 * 3600): Promise<string> {
   const header = base64UrlEncode(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = base64UrlEncode(JSON.stringify({ ...session, exp: Date.now() + 7 * 24 * 3600 * 1000 }));
-  const data = `${header}.${payload}`;
+  const now = Math.floor(Date.now() / 1000);
+  const jwtPayload: JWTPayload = {
+    ...payload,
+    iat: now,
+    exp: now + expiresInSeconds,
+  };
+  const payloadEncoded = base64UrlEncode(JSON.stringify(jwtPayload));
+  const data = `${header}.${payloadEncoded}`;
   const sig = await hmacSha256(data, SECRET);
   return `${data}.${sig}`;
 }
 
-export async function verifySessionEdge(token: string): Promise<UserSession | null> {
+/** Verify and decode JWT token */
+export async function verifySession(token: string): Promise<UserSession | null> {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
@@ -51,10 +69,18 @@ export async function verifySessionEdge(token: string): Promise<UserSession | nu
     const expectedSig = await hmacSha256(`${header}.${payload}`, SECRET);
     if (sig !== expectedSig) return null;
 
-    const data = JSON.parse(base64UrlDecode(payload));
-    if (data.exp && Date.now() > data.exp) return null;
-    return data as UserSession;
+    const data = JSON.parse(base64UrlDecode(payload)) as JWTPayload;
+    if (data.exp && Math.floor(Date.now() / 1000) > data.exp) return null;
+
+    // Remove standard JWT fields, return UserSession
+    const { exp, iat, ...session } = data;
+    return session as UserSession;
   } catch {
     return null;
   }
+}
+
+/** Synchronous verify for middleware/edge contexts (if needed) */
+export async function verifySessionSync(token: string): Promise<UserSession | null> {
+  return verifySession(token);
 }
