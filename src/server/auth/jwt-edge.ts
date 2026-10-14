@@ -7,7 +7,7 @@ export interface UserSession {
   twoFactorPassed: boolean;
 }
 
-const SECRET = process.env.JWT_SECRET || "icewall-default-secret-dev-2025-token";
+const SECRET = process.env.JWT_SECRET!;
 
 function base64UrlEncode(str: string): string {
   return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");

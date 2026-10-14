@@ -4,7 +4,7 @@ import type { UserSession } from "./jwt-edge";
 
 export type { UserSession };
 
-const JWT_SECRET = process.env.JWT_SECRET || "icewall-default-secret-dev-2025-token";
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 /** Hash password using standard PBKDF2 with SHA-512 (zero external binaries required) */
 export function hashPassword(password: string): string {
