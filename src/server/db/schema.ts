@@ -3,12 +3,14 @@ import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-or
 
 const now = sql`(unixepoch() * 1000)`;
 
-/** Série temporal de saúde do Spark (coletor de 15 s). Memória unificada: GPU e CPU dividem a RAM. */
+/** Série temporal de saúde por servidor (coletor de 15 s). Memória unificada: GPU e CPU dividem a RAM. */
 export const metrics = sqliteTable(
   "metrics",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     ts: integer("ts").notNull(),
+    /** Servidor do registro `servers`; histórico antigo aponta para o Spark (migração 0011). */
+    serverId: integer("server_id"),
     gpuUtil: real("gpu_util"),
     gpuTemp: real("gpu_temp"),
     gpuPower: real("gpu_power"),
@@ -34,6 +36,7 @@ export const containerStats = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     ts: integer("ts").notNull(),
+    serverId: integer("server_id"),
     name: text("name").notNull(),
     cpuPct: real("cpu_pct"),
     memBytes: real("mem_bytes"),
@@ -55,6 +58,7 @@ export const events = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     ts: integer("ts").notNull().default(now),
+    serverId: integer("server_id"),
     kind: text("kind").notNull(),
     severity: text("severity", { enum: ["info", "warn", "crit"] }).notNull().default("info"),
     title: text("title").notNull(),
@@ -210,6 +214,7 @@ export const recommendations = sqliteTable("recommendations", {
 export const actionLog = sqliteTable("action_log", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   ts: integer("ts").notNull().default(now),
+  serverId: integer("server_id"),
   action: text("action").notNull(),
   target: text("target"),
   status: text("status", { enum: ["ok", "error"] }).notNull(),

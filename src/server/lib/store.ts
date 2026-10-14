@@ -13,6 +13,15 @@ export function getSnapshot<T>(key: string): Snapshot<T> | null {
   return row ? { ts: row.ts, data: row.data as T, error: row.error } : null;
 }
 
+/** Chave de snapshot por servidor (Etapa 03): `server:{id}:{tipo}`. */
+export function serverSnapshotKey(serverId: number, tipo: string): string {
+  return `server:${serverId}:${tipo}`;
+}
+
+export function getServerSnapshot<T>(serverId: number, tipo: string): Snapshot<T> | null {
+  return getSnapshot<T>(serverSnapshotKey(serverId, tipo));
+}
+
 /** Grava o estado atual. Com erro, mantém o último dado bom e só registra o erro. */
 export function putSnapshot(key: string, data: unknown, error: string | null = null): void {
   const db = getDb();
@@ -32,8 +41,11 @@ export function putSnapshot(key: string, data: unknown, error: string | null = n
 
 export type Severity = "info" | "warn" | "crit";
 
-export function addEvent(kind: string, severity: Severity, title: string, detail?: unknown): void {
-  getDb().insert(schema.events).values({ ts: Date.now(), kind, severity, title, detail: detail ?? null }).run();
+export function addEvent(kind: string, severity: Severity, title: string, detail?: unknown, serverId?: number): void {
+  getDb()
+    .insert(schema.events)
+    .values({ ts: Date.now(), kind, severity, title, detail: detail ?? null, serverId: serverId ?? null })
+    .run();
 }
 
 export function recentEvents(limit = 50) {
@@ -53,11 +65,15 @@ export function putSetting(key: string, value: unknown): void {
     .run();
 }
 
-/** Registra a transição online/offline de uma fonte uma vez só (sem um evento por coleta). */
-export function trackReachability(key: string, ok: boolean, title: string, error?: string): void {
+/**
+ * Registra a transição online/offline de uma fonte uma vez só (sem um evento
+ * por coleta). `severityDown` cobre estados legítimos "fora do ar" (ex.:
+ * serviço intencionalmente inativo), que merecem atenção sem alarde.
+ */
+export function trackReachability(key: string, ok: boolean, title: string, error?: string, severityDown: Severity = "crit"): void {
   const prevOk = getSetting<boolean>(`reach:${key}`, true);
   if (prevOk !== ok) {
-    addEvent("reachability", ok ? "info" : "crit", ok ? `${title} voltou` : `${title} inacessível`, error ? { error } : undefined);
+    addEvent("reachability", ok ? "info" : severityDown, ok ? `${title} voltou` : `${title} inacessível`, error ? { error } : undefined);
     putSetting(`reach:${key}`, ok);
   }
 }

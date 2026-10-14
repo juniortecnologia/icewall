@@ -23,6 +23,22 @@ export function serverIdByName(nome: string): number | null {
   return row?.id ?? null;
 }
 
+/** Linhas do registro `servers` (ordem estável por id) para os jobs iterarem. */
+export function listServers(): typeof servers.$inferSelect[] {
+  return getDb().select().from(servers).orderBy(servers.id).all();
+}
+
+/**
+ * Servidor "principal" para leitura compatível: o Spark, quando cadastrado —
+ * toda a série histórica (e o painel antigo) é dele. Senão, o primeiro do
+ * registro; null se o registro estiver vazio.
+ */
+export function primaryServerId(): number | null {
+  const spark = serverIdByName("Spark");
+  if (spark !== null) return spark;
+  return getDb().select({ id: servers.id }).from(servers).orderBy(servers.id).limit(1).get()?.id ?? null;
+}
+
 /** Marca de falha do executor: code -1 + mensagem clara no stderr. */
 function falha(mensagem: string, ms = 0): ExecResult {
   return { code: -1, stdout: "", stderr: `[icewall] ${mensagem}`, ms };
