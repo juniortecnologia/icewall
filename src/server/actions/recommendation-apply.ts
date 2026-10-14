@@ -114,7 +114,7 @@ export async function applyRecommendation(id: number): Promise<RecExecutionResul
     }
 
     if (plan.actionId === "tier.set") {
-      const res = await runAction("tier.set", plan.target!, plan.arg);
+      const res = await runAction("tier.set", plan.target!, { arg: plan.arg });
       if (!res.ok) return { ok: false, message: res.output };
       
       db.update(schema.recommendations)

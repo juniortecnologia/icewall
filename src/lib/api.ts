@@ -33,7 +33,7 @@ export interface ActionResult {
 export function useAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { action: string; target: string; arg?: string }) => send<ActionResult>("/api/actions", "POST", v),
+    mutationFn: (v: { action: string; target: string; arg?: string; serverId?: number }) => send<ActionResult>("/api/actions", "POST", v),
     onSettled: () => qc.invalidateQueries(),
   });
 }

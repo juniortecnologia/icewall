@@ -7,6 +7,7 @@ import type {
   OsSnapshot,
   SecuritySnapshot,
   UpdatesSnapshot,
+  VllmSnapshot,
 } from "@/lib/types";
 import { benchRows, benchWeights, readModelsJson, tierBackend } from "./bench/models-json";
 import { leaderboard } from "./bench/leaderboard";
@@ -17,7 +18,8 @@ import { answersByKind } from "./jev/recommend";
 import { isSuccess, type AnswerMap } from "./jev/rules";
 import { CENARIOS, lerCombinacoes, META_CONC, META_TOK_S, META_TTFT_S, resumoCarga, type ResumoCarga } from "./bench/spark";
 import { custoJev } from "./crivo/store";
-import { primarySnapshot, recentEvents } from "./lib/store";
+import { primarySnapshot, getServerSnapshot, recentEvents } from "./lib/store";
+import { listServers } from "./executor";
 import { getModelSources } from "./models/sources";
 import { jobStates } from "./scheduler";
 
@@ -440,4 +442,28 @@ export function auditor() {
 
 export function actionLog() {
   return getDb().select().from(schema.actionLog).orderBy(desc(schema.actionLog.ts)).limit(200).all();
+}
+
+/**
+ * Etapa 04 — monitor multi-servidor da página /servers: todos os servidores
+ * do registro (projeção segura, sem chaves) com os snapshots de
+ * health/docker/ollama/vLLM/SO coletados por servidor pelo scheduler.
+ */
+export function serverMonitor() {
+  return listServers().map((server) => ({
+    server: {
+      id: server.id,
+      nome: server.nome,
+      tipo: server.tipo,
+      host: server.tipo === "ssh" ? server.host : "localhost",
+      porta: server.tipo === "ssh" ? server.porta : null,
+      usuario: server.tipo === "ssh" ? server.usuario : null,
+      vllmUrl: server.vllmUrl,
+    },
+    health: getServerSnapshot<HealthSnapshot>(server.id, "health"),
+    docker: getServerSnapshot<DockerSnapshot>(server.id, "docker"),
+    ollama: getServerSnapshot<OllamaSnapshot>(server.id, "ollama"),
+    vllm: getServerSnapshot<VllmSnapshot>(server.id, "vllm"),
+    os: getServerSnapshot<OsSnapshot>(server.id, "os"),
+  }));
 }

@@ -67,6 +67,14 @@ export async function ollamaFetch(path: string, init?: RequestInit, timeoutMs = 
   return res.json();
 }
 
+/**
+ * Ações por servidor (Etapa 04): fala com o Ollama de UM servidor do registro
+ * com a base derivada dele — nunca a constante do env global.
+ */
+export async function ollamaFetchOn(server: ServerRef, path: string, init?: RequestInit, timeoutMs = 8000): Promise<unknown> {
+  return fetchFrom(ollamaBaseUrl(server), path, init, timeoutMs);
+}
+
 async function fetchFrom(base: string, path: string, init?: RequestInit, timeoutMs = 8000): Promise<unknown> {
   const res = await fetch(`${base}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`${path}: HTTP ${res.status} ${await res.text().catch(() => "")}`.trim());

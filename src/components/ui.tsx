@@ -231,6 +231,7 @@ export function ActionButton({
   action,
   target,
   arg,
+  serverId,
   label,
   confirm,
   danger = false,
@@ -239,6 +240,8 @@ export function ActionButton({
   action: string;
   target: string;
   arg?: string;
+  /** Servidor do registro que recebe a ação (Etapa 04); sem ele, o principal. */
+  serverId?: number;
   label: string;
   confirm?: string;
   danger?: boolean;
@@ -248,7 +251,7 @@ export function ActionButton({
   const m = useAction();
   const run = () => {
     setAsking(false);
-    m.mutate({ action, target, arg });
+    m.mutate({ action, target, arg, serverId });
   };
   return (
     <span className="inline-flex flex-col gap-1">
