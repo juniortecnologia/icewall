@@ -17,7 +17,8 @@ import {
   parseSystemctlFailed,
 } from "../../parsers";
 import { containerPorts, KNOWN_PORTS, securityFindings } from "../findings";
-import { sparkAuthMethods, sparkExec } from "../ssh";
+import { execOnServer, serverIdByName } from "../../executor";
+import { sparkAuthMethods } from "../ssh";
 
 const OS_CMD = [
   "echo @@osrel@@; cat /etc/os-release",
@@ -33,7 +34,14 @@ const OS_CMD = [
 ].join("; ");
 
 export async function collectOs(): Promise<void> {
-  const res = await sparkExec(OS_CMD, 30_000);
+  // Migração incremental (Etapa 02): executor por servidor, Spark resolvido
+  // por nome no registro (não por constante).
+  const sparkId = serverIdByName("Spark");
+  if (sparkId === null) {
+    putSnapshot("os", null, '[icewall] servidor "Spark" não encontrado no registro — cadastre em /servers');
+    return;
+  }
+  const res = await execOnServer(sparkId, OS_CMD, 30_000);
   if (!res.stdout.includes("@@osrel@@")) {
     putSnapshot("os", null, res.stderr.trim() || `ssh saiu com ${res.code}`);
     return;
@@ -85,7 +93,12 @@ const UPDATES_CMD = [
 ].join("; ");
 
 export async function collectUpdates(): Promise<void> {
-  const res = await sparkExec(UPDATES_CMD, 60_000);
+  const sparkId = serverIdByName("Spark");
+  if (sparkId === null) {
+    putSnapshot("updates", null, '[icewall] servidor "Spark" não encontrado no registro — cadastre em /servers');
+    return;
+  }
+  const res = await execOnServer(sparkId, UPDATES_CMD, 60_000);
   if (!res.stdout.includes("@@apt@@")) {
     putSnapshot("updates", null, res.stderr.trim() || `ssh saiu com ${res.code}`);
     return;
@@ -121,7 +134,12 @@ const SECURITY_CMD = [
 ].join("; ");
 
 export async function collectSecurity(): Promise<void> {
-  const [res, methods] = await Promise.all([sparkExec(SECURITY_CMD, 30_000), sparkAuthMethods()]);
+  const sparkId = serverIdByName("Spark");
+  if (sparkId === null) {
+    putSnapshot("security", null, '[icewall] servidor "Spark" não encontrado no registro — cadastre em /servers');
+    return;
+  }
+  const [res, methods] = await Promise.all([execOnServer(sparkId, SECURITY_CMD, 30_000), sparkAuthMethods()]);
   if (!res.stdout.includes("@@ss@@")) {
     putSnapshot("security", null, res.stderr.trim() || `ssh saiu com ${res.code}`);
     return;
