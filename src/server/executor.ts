@@ -1,0 +1,67 @@
+import "server-only";
+import { eq } from "drizzle-orm";
+import { createDriver, type ExecResult } from "@/lib/servers/server-driver";
+import "@/lib/servers/drivers"; // registra as fábricas "local" e "ssh"
+import { getDb } from "./db/client";
+import { servers } from "./db/schema";
+
+/**
+ * Executor por servidor — Etapa 02 do plano multi-servidor.
+ * Centraliza a execução de comandos: qualquer comando roda em qualquer
+ * servidor cadastrado no registro central `servers`, usando o driver do
+ * servidor (`local` ou `ssh`) em vez de um host fixo por constante.
+ *
+ * Falhas (servidor inexistente, campos SSH incompletos, driver desconhecido)
+ * devolvem um `ExecResult` com `code: -1` e mensagem clara em `stderr` —
+ * nunca uma lista vazia nem silêncio: os coletores registram a falha no
+ * snapshot e o painel mostra o erro.
+ */
+
+/** Id do servidor pelo nome (resolução por nome no registro, não por constante). */
+export function serverIdByName(nome: string): number | null {
+  const row = getDb().select({ id: servers.id }).from(servers).where(eq(servers.nome, nome)).limit(1).get();
+  return row?.id ?? null;
+}
+
+/** Marca de falha do executor: code -1 + mensagem clara no stderr. */
+function falha(mensagem: string, ms = 0): ExecResult {
+  return { code: -1, stdout: "", stderr: `[icewall] ${mensagem}`, ms };
+}
+
+/**
+ * Executa um comando no servidor pelo id do registro.
+ * O comando vem SEMPRE de uma constante deste projeto ou de `shellArg`
+ * sobre um valor validado: nunca concatene texto vindo da interface.
+ */
+export async function execOnServer(serverId: number, command: string, timeoutMs = 20_000): Promise<ExecResult> {
+  const started = Date.now();
+  const row = getDb().select().from(servers).where(eq(servers.id, serverId)).limit(1).get();
+  if (!row) {
+    return falha(`servidor inexistente no registro: id ${serverId} (cadastre em /servers)`, Date.now() - started);
+  }
+
+  if (row.tipo === "local") {
+    // O driver local ignora host/usuario/chaveSshPath.
+    const driver = createDriver("local", { host: row.host || "localhost", user: "", keyPath: "" });
+    return driver.exec(command, timeoutMs);
+  }
+
+  if (row.tipo === "ssh") {
+    if (!row.host || !row.usuario || !row.chaveSshPath) {
+      const faltando = [
+        !row.host ? "host" : null,
+        !row.usuario ? "usuario" : null,
+        !row.chaveSshPath ? "chaveSshPath" : null,
+      ]
+        .filter(Boolean)
+        .join(", ");
+      return falha(`servidor "${row.nome}" (id ${row.id}) indisponível: campos SSH incompletos (${faltando})`, Date.now() - started);
+    }
+    const driver = createDriver("ssh", { host: row.host, port: row.porta ?? undefined, user: row.usuario, keyPath: row.chaveSshPath });
+    // LC_ALL=C: mesma convenção da antiga sparkExec — saída estável para os
+    // parsers, independente do locale do servidor remoto.
+    return driver.exec(`export LC_ALL=C; ${command}`, timeoutMs);
+  }
+
+  return falha(`servidor "${row.nome}" (id ${row.id}) tem tipo desconhecido: ${String(row.tipo)}`, Date.now() - started);
+}
