@@ -3,7 +3,7 @@ import type { ContainerInfo, ContainerStat, DockerImage, DockerSnapshot } from "
 import { getDb, schema } from "../../db/client";
 import { addEvent, getSnapshot, putSnapshot } from "../../lib/store";
 import { parseDockerJsonLines, parseDockerMem, parsePercent, parseSections } from "../../parsers";
-import { sparkExec } from "../ssh";
+import { execOnServer, serverIdByName } from "../../executor";
 
 const DOCKER_CMD = [
   "echo @@ps@@; docker ps -a --format '{{json .}}'",
@@ -14,7 +14,14 @@ const DOCKER_CMD = [
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 
 export async function collectDocker(): Promise<void> {
-  const res = await sparkExec(DOCKER_CMD, 40_000);
+  // Migração incremental (Etapa 02): o coletor passa a usar o executor por
+  // servidor, resolvendo o Spark por nome no registro (não por constante).
+  const sparkId = serverIdByName("Spark");
+  if (sparkId === null) {
+    putSnapshot("docker", null, '[icewall] servidor "Spark" não encontrado no registro — cadastre em /servers');
+    return;
+  }
+  const res = await execOnServer(sparkId, DOCKER_CMD, 40_000);
   if (res.code !== 0 || !res.stdout.includes("@@ps@@")) {
     putSnapshot("docker", null, res.stderr.trim() || `docker saiu com ${res.code}`);
     return;
