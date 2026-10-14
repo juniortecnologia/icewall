@@ -351,18 +351,29 @@ export const saasAuditLogs = sqliteTable(
 
 // ---------------------------------------------------------------------------------------------
 // ---------------------------------------------------------------------------------------------
-// Fase 0: infraestrutura multi-servidor (gerenciamento de servidores remotos)
+// Registro central de servidores (Etapa 01 do plano multi-servidor)
+// Antiga tabela `train_servers` — migrada em 0010_servers; histórico antigo
+// remanejado como tipo 'ssh' (servidores de treino apontavam para o Spark).
+// `chaveSshPath` e `vllmKey` NUNCA devem aparecer em respostas de GET.
 
-export const trainServers = sqliteTable(
-  "train_servers",
+export const servers = sqliteTable(
+  "servers",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     nome: text("nome").notNull().unique(),
-    tipo: text("tipo", { enum: ["spark", "generic"] }).notNull(),
-    host: text("host").notNull(),
-    porta: integer("porta").default(22),
-    usuario: text("usuario").notNull(),
-    chaveSshPath: text("chave_ssh_path").notNull(),
+    tipo: text("tipo", { enum: ["local", "ssh"] }).notNull().default("ssh"),
+    host: text("host").notNull().default("localhost"),
+    porta: integer("porta"),
+    usuario: text("usuario"),
+    /** Caminho local da chave SSH — sigilo; nunca exposto em GET. */
+    chaveSshPath: text("chave_ssh_path"),
+    /** URL base do vLLM neste servidor (ex.: http://10.0.5.18:8001). */
+    vllmUrl: text("vllm_url"),
+    /** Chave de autenticação do vLLM — sigilo; nunca exposta em GET. */
+    vllmKey: text("vllm_key"),
+    capacidades: text("capacidades", { mode: "json" }).$type<Record<string, boolean> | null>(),
+    ultimoStatus: text("ultimo_status"),
+    ultimoCheck: integer("ultimo_check"),
     criadoEm: integer("criado_em").notNull().default(now),
     atualizadoEm: integer("atualizado_em").notNull().default(now),
   },

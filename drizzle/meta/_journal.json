@@ -57,6 +57,13 @@
       "when": 1791900000000,
       "tag": "0009_train_servers",
       "breakpoints": false
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791992112332,
+      "tag": "0010_servers",
+      "breakpoints": true
     }
   ]
 }

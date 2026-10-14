@@ -34,13 +34,18 @@ interface Cluster {
   activeModelsCount?: number;
 }
 
+/** Espelho do SafeServer devolvido pela API (nunca inclui chaveSshPath/vllmKey). */
 interface TrainServer {
   id: number;
   nome: string;
-  tipo: "spark" | "generic";
+  tipo: "local" | "ssh";
   host: string;
-  porta: number;
-  usuario: string;
+  porta: number | null;
+  usuario: string | null;
+  vllmUrl: string | null;
+  capacidades: Record<string, boolean> | null;
+  ultimoStatus: string | null;
+  ultimoCheck: number | null;
   criadoEm: number;
   atualizadoEm: number;
 }
@@ -63,11 +68,12 @@ export default function ClustersPage() {
   const [showAddServerModal, setShowAddServerModal] = useState(false);
   const [editingServerId, setEditingServerId] = useState<number | null>(null);
   const [trainNome, setTrainNome] = useState("");
-  const [trainTipo, setTrainTipo] = useState<"spark" | "generic">("spark");
+  const [trainTipo, setTrainTipo] = useState<"local" | "ssh">("ssh");
   const [trainHost, setTrainHost] = useState("");
   const [trainPorta, setTrainPorta] = useState(22);
   const [trainUsuario, setTrainUsuario] = useState("");
-  const [trainKeyPath, setTrainKeyPath] = useState("/home/facini/.ssh/id_ed25519");
+  const [trainKeyPath, setTrainKeyPath] = useState("");
+  const [trainVllmUrl, setTrainVllmUrl] = useState("");
 
   const loadClusters = async () => {
     try {
@@ -100,11 +106,12 @@ export default function ClustersPage() {
   const openAddServerModal = () => {
     setEditingServerId(null);
     setTrainNome("");
-    setTrainTipo("spark");
+    setTrainTipo("ssh");
     setTrainHost("");
     setTrainPorta(22);
     setTrainUsuario("");
-    setTrainKeyPath("/home/facini/.ssh/id_ed25519");
+    setTrainKeyPath("");
+    setTrainVllmUrl("");
     setShowAddServerModal(true);
   };
 
@@ -113,27 +120,35 @@ export default function ClustersPage() {
     setTrainNome(server.nome);
     setTrainTipo(server.tipo);
     setTrainHost(server.host);
-    setTrainPorta(server.porta);
-    setTrainUsuario(server.usuario);
-    setTrainKeyPath("[ocultado por segurança]");
+    setTrainPorta(server.porta ?? 22);
+    setTrainUsuario(server.usuario ?? "");
+    // chaveSshPath/vllmKey nunca vêm da API — vazio significa "manter o atual".
+    setTrainKeyPath("");
+    setTrainVllmUrl(server.vllmUrl ?? "");
     setShowAddServerModal(true);
+  };
+
+  const validationMessage = (data: { details?: Record<string, string[]> }): string => {
+    const msg = Object.values(data.details ?? {}).flatMap((v) => v).join("\n");
+    return `Validação: ${msg || "verifique os campos"}`;
   };
 
   const handleAddServer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!trainNome || !trainHost || !trainUsuario) return;
+    if (!trainNome) return;
+    if (trainTipo === "ssh" && (!trainHost || !trainUsuario || !trainKeyPath)) return;
 
     try {
       const res = await fetch("/api/train/servers", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-icewall": "1" },
         body: JSON.stringify({
           nome: trainNome,
           tipo: trainTipo,
-          host: trainHost,
-          porta: trainPorta,
-          usuario: trainUsuario,
-          chaveSshPath: trainKeyPath.replace("[ocultado por segurança]", ""),
+          ...(trainTipo === "ssh"
+            ? { host: trainHost, porta: trainPorta, usuario: trainUsuario, chaveSshPath: trainKeyPath }
+            : {}),
+          vllmUrl: trainVllmUrl || undefined,
         }),
       });
       const data = await res.json();
@@ -142,6 +157,8 @@ export default function ClustersPage() {
         loadTrainServers();
       } else if (data.error === "nome_duplicado") {
         alert(data.message);
+      } else if (data.error === "validacao_erro") {
+        alert(validationMessage(data));
       } else {
         alert(`Erro: ${data.error || "Desconhecido"}`);
       }
@@ -152,25 +169,32 @@ export default function ClustersPage() {
 
   const handleUpdateServer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingServerId || !trainNome || !trainHost || !trainUsuario) return;
+    if (!editingServerId || !trainNome) return;
+    if (trainTipo === "ssh" && (!trainHost || !trainUsuario)) return;
 
     try {
-      const res = await fetch(`/api/train/servers?id=${editingServerId}`, {
+      const res = await fetch(`/api/train/servers/${editingServerId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-icewall": "1" },
         body: JSON.stringify({
           nome: trainNome,
           tipo: trainTipo,
-          host: trainHost,
-          porta: trainPorta,
-          usuario: trainUsuario,
-          chaveSshPath: trainKeyPath.replace("[ocultado por segurança]", "") || undefined,
+          host: trainTipo === "ssh" ? trainHost : undefined,
+          porta: trainTipo === "ssh" ? trainPorta : undefined,
+          usuario: trainTipo === "ssh" ? trainUsuario : undefined,
+          // Chave vazia = manter a armazenada (a API não a expõe em GET).
+          chaveSshPath: trainKeyPath || undefined,
+          vllmUrl: trainVllmUrl || undefined,
         }),
       });
       const data = await res.json();
       if (data.ok) {
         setShowAddServerModal(false);
         loadTrainServers();
+      } else if (data.error === "campos_ssh_incompletos") {
+        alert(data.message);
+      } else if (data.error === "validacao_erro") {
+        alert(validationMessage(data));
       } else {
         alert(`Erro: ${data.error || "Desconhecido"}`);
       }
@@ -182,7 +206,10 @@ export default function ClustersPage() {
   const handleDeleteServer = async (id: number, nome: string) => {
     if (!confirm(`Remover servidor "${nome}"?`)) return;
     try {
-      const res = await fetch(`/api/train/servers?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/train/servers/${id}`, {
+        method: "DELETE",
+        headers: { "x-icewall": "1" },
+      });
       const data = await res.json();
       if (data.ok) loadTrainServers();
     } catch (err) {
@@ -395,9 +422,9 @@ export default function ClustersPage() {
       <div className="mt-14">
         <div className="flex items-center justify-between mb-6 pb-4 border-b border-line">
           <div>
-            <h2 className="text-lg font-bold text-ink tracking-tight">Servidores de Treinamento</h2>
+            <h2 className="text-lg font-bold text-ink tracking-tight">Registro de Servidores</h2>
             <p className="text-xs text-ink-3 mt-0.5">
-              Gerencie os servidores remotos usados para job de fine-tune e ingestão de datasets.
+              Servidores locais e remotos do cluster — base central de treino, inferência e automação.
             </p>
           </div>
           <button
@@ -417,9 +444,9 @@ export default function ClustersPage() {
         ) : trainServers.length === 0 ? (
           <div className="border border-dashed border-line rounded-2xl p-10 text-center bg-surface-2/30">
             <Key className="w-10 h-10 text-ink-3 mx-auto mb-3" />
-            <h3 className="text-sm font-semibold text-ink">Nenhum servidor de treinamento cadastrado</h3>
+            <h3 className="text-sm font-semibold text-ink">Nenhum servidor cadastrado</h3>
             <p className="text-xs text-ink-3 mt-1 max-w-sm mx-auto">
-              Adicione servidores remotos para executar fine-tunes e ingestão de datasets.
+              Adicione sua estação local ou servidores remotos para treino, inferência e automação.
             </p>
           </div>
         ) : (
@@ -432,7 +459,7 @@ export default function ClustersPage() {
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">Tipo</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">Host:Porta</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">Usuário</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">Chave SSH</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">vLLM</th>
                     <th className="text-right px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">Ações</th>
                   </tr>
                 </thead>
@@ -442,18 +469,18 @@ export default function ClustersPage() {
                       <td className="px-4 py-3 font-medium text-ink">{srv.nome}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium ${
-                          srv.tipo === "spark"
-                            ? "bg-violet-500/10 text-violet-300 border border-violet-500/20"
-                            : "bg-slate-500/10 text-slate-300 border border-slate-500/20"
+                          srv.tipo === "local"
+                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                            : "bg-violet-500/10 text-violet-300 border border-violet-500/20"
                         }`}>
-                          {srv.tipo === "spark" ? "✨ Spark GPU" : "🖥 Genérico"}
+                          {srv.tipo === "local" ? "📍 Local" : "🌐 SSH"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-ink-2 font-mono text-xs">{srv.host}:{srv.porta}</td>
-                      <td className="px-4 py-3 text-ink-2 font-mono text-xs">@{srv.usuario}</td>
-                      <td className="px-4 py-3">
-                        <span className="text-[11px] font-mono text-ink-3 truncate max-w-[160px] block" title={srv.id === editingServerId ? "[ocultado]" : "[caminho da chave SSH]"}>
-                          {srv.id === editingServerId ? "••••••••" : "/home/.../id_*"}
+                      <td className="px-4 py-3 text-ink-2 font-mono text-xs">{srv.porta ? `${srv.host}:${srv.porta}` : srv.host}</td>
+                      <td className="px-4 py-3 text-ink-2 font-mono text-xs">{srv.usuario ? `@${srv.usuario}` : "—"}</td>
+                      <td className="px-4 py-3 text-ink-2 font-mono text-xs">
+                        <span className="truncate max-w-[180px] block" title={srv.vllmUrl ?? undefined}>
+                          {srv.vllmUrl ?? "—"}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -573,14 +600,14 @@ export default function ClustersPage() {
         </div>
       )}
 
-      {/* Modal Adicionar/Editar Servidor de Treinamento */}
+      {/* Modal Adicionar/Editar Servidor */}
       {showAddServerModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#0f172a] border border-[#1e293b] rounded-2xl p-6 max-w-md w-full shadow-2xl">
             <h2 className="text-lg font-bold text-white mb-1">
-              {editingServerId ? "Editar Servidor" : "Novo Servidor de Treinamento"}
+              {editingServerId ? "Editar Servidor" : "Novo Servidor"}
             </h2>
-            <p className="text-xs text-slate-400 mb-4">Conecte um nó remoto para fine-tune e datasets.</p>
+            <p className="text-xs text-slate-400 mb-4">Adicione uma estação local ou um servidor remoto ao registro do cluster.</p>
 
             <form onSubmit={editingServerId ? handleUpdateServer : handleAddServer} className="space-y-4">
               <div>
@@ -599,48 +626,80 @@ export default function ClustersPage() {
                 <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Tipo</label>
                 <select
                   value={trainTipo}
-                  onChange={(e) => setTrainTipo(e.target.value as "spark" | "generic")}
+                  onChange={(e) => setTrainTipo(e.target.value as "local" | "ssh")}
                   className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
                 >
-                  <option value="spark">Spark GPU (NVIDIA Blackwell)</option>
-                  <option value="generic">Genérico</option>
+                  <option value="ssh">Remoto via SSH</option>
+                  <option value="local">Local (esta máquina)</option>
                 </select>
               </div>
 
-              <div className="grid grid-cols-[1fr_80px] gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Host</label>
-                  <input
-                    type="text"
-                    value={trainHost}
-                    onChange={(e) => setTrainHost(e.target.value)}
-                    placeholder="10.0.5.8"
-                    required
-                    className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Porta</label>
-                  <input
-                    type="number"
-                    value={trainPorta}
-                    onChange={(e) => setTrainPorta(Number(e.target.value))}
-                    min={1}
-                    max={65535}
-                    required
-                    className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-              </div>
+              {trainTipo === "ssh" && (
+                <>
+                  <div className="grid grid-cols-[1fr_80px] gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Host</label>
+                      <input
+                        type="text"
+                        value={trainHost}
+                        onChange={(e) => setTrainHost(e.target.value)}
+                        placeholder="10.0.5.8"
+                        required
+                        className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Porta</label>
+                      <input
+                        type="number"
+                        value={trainPorta}
+                        onChange={(e) => setTrainPorta(Number(e.target.value))}
+                        min={1}
+                        max={65535}
+                        required
+                        className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Usuário SSH</label>
+                    <input
+                      type="text"
+                      value={trainUsuario}
+                      onChange={(e) => setTrainUsuario(e.target.value)}
+                      placeholder="facini"
+                      required
+                      className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Chave SSH (caminho)</label>
+                    <input
+                      type="text"
+                      value={trainKeyPath}
+                      onChange={(e) => setTrainKeyPath(e.target.value)}
+                      placeholder="~/.ssh/id_ed25519"
+                      required={!editingServerId}
+                      className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
+                    />
+                    {editingServerId && (
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Deixe em branco para manter a chave atual (não exibida por segurança).
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Usuário SSH</label>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Endpoint vLLM (opcional)</label>
                 <input
                   type="text"
-                  value={trainUsuario}
-                  onChange={(e) => setTrainUsuario(e.target.value)}
-                  placeholder="facini"
-                  required
+                  value={trainVllmUrl}
+                  onChange={(e) => setTrainVllmUrl(e.target.value)}
+                  placeholder="http://10.0.5.18:8001"
                   className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
                 />
               </div>

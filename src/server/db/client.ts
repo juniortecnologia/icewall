@@ -6,6 +6,7 @@ import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3"
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { envPath } from "../lib/paths";
 import * as schema from "./schema";
+import { ensureServerSeed } from "./seed";
 
 export type DB = BetterSQLite3Database<typeof schema>;
 
@@ -19,6 +20,8 @@ function open(): DB {
   sqlite.pragma("busy_timeout = 5000");
   const db = drizzle(sqlite, { schema });
   migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
+  // Seed idempotente do registro central de servidores (Station + Spark).
+  ensureServerSeed(db);
   return db;
 }
 
