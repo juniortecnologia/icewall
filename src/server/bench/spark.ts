@@ -31,15 +31,15 @@ export type Servico = z.infer<typeof servicoSchema>;
 export type Combinacao = z.infer<typeof combinacaoSchema> & { id: string };
 
 export function lerCombinacoes(dir = COMBINACOES_DIR): Combinacao[] {
-  if (!fs.existsSync(dir)) return [];
+  if (!fs.existsSync(/* turbopackIgnore: true */ dir)) return [];
   return fs
-    .readdirSync(dir)
+    .readdirSync(/* turbopackIgnore: true */ dir)
     .filter((f) => f.endsWith(".json"))
     .sort()
     .map((f) => {
       const id = f.slice(0, -".json".length);
       if (!/^[a-z0-9-]+$/.test(id)) throw new Error(`nome de combinação inválido: ${f}`);
-      return { id, ...combinacaoSchema.parse(JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"))) };
+      return { id, ...combinacaoSchema.parse(JSON.parse(fs.readFileSync(/* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ dir, f), "utf8"))) };
     });
 }
 

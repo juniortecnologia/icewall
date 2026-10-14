@@ -4,10 +4,10 @@ import { connection } from "next/server";
 const ALLOWED_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 /** Resposta JSON de leitura: sempre em tempo de requisição (nunca pré-renderizada). */
-export async function json<T>(fn: () => T | Promise<T>): Promise<Response> {
+export async function json<T>(fn: () => T | Promise<T>, init?: ResponseInit): Promise<Response> {
   await connection();
   try {
-    return Response.json(await fn());
+    return Response.json(await fn(), init);
   } catch (err) {
     console.error("[icewall] api:", err);
     return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

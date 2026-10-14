@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { json } from "@/server/api";
 import { getDb, schema } from "@/server/db/client";
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   const raw = await req.json();
   const parsed = finetuneStart.safeParse(raw);
   if (!parsed.success || parsed.data.type !== "start") {
-    return json(() => ({ ok: false, error: "invalid_payload", details: parsed.error.flatten().fieldErrors }), { status: 400 });
+    return json(() => ({ ok: false, error: "invalid_payload", details: parsed.error?.flatten().fieldErrors ?? {} }), { status: 400 });
   }
 
   const cfg = parsed.data;
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
       baseModel: cfg.base_model,
       method: cfg.method,
       datasetPath: cfg.dataset_path ?? null,
-      paramsJson: JSON.stringify({ max_samples: cfg.max_samples, learning_rate: cfg.learning_rate, epochs: cfg.epochs, r: cfg.r, alpha: cfg.alpha, dropout: cfg.dropout }),
+      paramsJson: JSON.stringify({ max_samples: cfg.max_samples, learning_rate: cfg.learning_rate, epochs: cfg.epochs, r: cfg.r, alpha: cfg.alpha, dropout: cfg.dropout, bf16: cfg.bf16 }),
       status: "queued",
       progressPct: 0,
       epochsDone: 0,
@@ -63,7 +64,7 @@ export async function POST(req: Request) {
 
   // Montar o docker run do Unsloth
   const gpuSpec = '--gpus all';
-  const bfFlags = ['--env', 'UNSLOUTH_BF16=1'];
+  const bfFlags = cfg.bf16 ? ['--env', 'UNSLOTH_BF16=1'] : [];
   
   const params = [
     `--model ${shellArg(cfg.base_model)}`,
@@ -118,7 +119,7 @@ export async function POST(req: Request) {
   try {
     db.update(schema.fineTuneRuns)
       .set({ status: 'training', updatedAt: Date.now() })
-      .where(schema.fineTuneRuns.runId.eq(runId))
+      .where(eq(schema.fineTuneRuns.runId, runId))
       .run();
   } catch {}
 
