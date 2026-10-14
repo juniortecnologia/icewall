@@ -2,7 +2,7 @@ import "server-only";
 import { and, desc, eq, gte, isNotNull } from "drizzle-orm";
 import type { SecuritySnapshot, UpdatesSnapshot } from "@/lib/types";
 import { getDb, schema } from "../db/client";
-import { getSnapshot } from "../lib/store";
+import { primarySnapshot } from "../lib/store";
 import { isJudged, jevEnabled, judge } from "./client";
 import { benchFailureQuestions, delegationQuestions, HOST_CONTEXT, packageQuestions, portQuestions } from "./questions";
 
@@ -115,7 +115,7 @@ async function auditDelegations(budget: number): Promise<number> {
 }
 
 async function auditPackages(budget: number): Promise<number> {
-  const updates = getSnapshot<UpdatesSnapshot>("updates")?.data;
+  const updates = primarySnapshot<UpdatesSnapshot>("updates")?.data;
   let calls = 0;
   for (const p of updates?.packages ?? []) {
     if (calls >= budget) break;
@@ -133,7 +133,7 @@ async function auditPackages(budget: number): Promise<number> {
 }
 
 async function auditPorts(budget: number): Promise<number> {
-  const sec = getSnapshot<SecuritySnapshot>("security")?.data;
+  const sec = primarySnapshot<SecuritySnapshot>("security")?.data;
   let calls = 0;
   for (const p of sec?.ports ?? []) {
     if (calls >= budget) break;

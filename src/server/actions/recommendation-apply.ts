@@ -1,6 +1,7 @@
 import "server-only";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "../db/client";
+import { serverIdByName } from "../executor";
 import { runAction } from "./allowlist";
 import { addEvent } from "../lib/store";
 
@@ -108,7 +109,7 @@ export async function applyRecommendation(id: number): Promise<RecExecutionResul
         .where(eq(schema.recommendations.id, id))
         .run();
 
-      addEvent("action", "info", `Benchmark de qualidade disparado via recomendação #${id}`);
+      addEvent("action", "info", `Benchmark de qualidade disparado via recomendação #${id}`, undefined, serverIdByName("Spark"));
       return { ok: true, message: "Benchmark de qualidade iniciado com sucesso!", actionId: plan.actionId };
     }
 

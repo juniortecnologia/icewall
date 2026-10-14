@@ -1,5 +1,6 @@
 import "server-only";
 import { desc, eq } from "drizzle-orm";
+import { primaryServerId } from "../executor";
 import { getDb, schema } from "../db/client";
 
 export interface Snapshot<T> {
@@ -22,13 +23,25 @@ export function getServerSnapshot<T>(serverId: number, tipo: string): Snapshot<T
   return getSnapshot<T>(serverSnapshotKey(serverId, tipo));
 }
 
+/**
+ * Leitura compatível (Etapa 03): o snapshot do servidor "principal"
+ * (Spark, quando cadastrado — é dele toda a série histórica; senão, o
+ * primeiro do registro). Null se o registro estiver vazio.
+ */
+export function primarySnapshot<T>(tipo: string): Snapshot<T> | null {
+  const id = primaryServerId();
+  return id === null ? null : getServerSnapshot<T>(id, tipo);
+}
+
 /** Grava o estado atual. Com erro, mantém o último dado bom e só registra o erro. */
 export function putSnapshot(key: string, data: unknown, error: string | null = null): void {
   const db = getDb();
   if (error) {
     const prev = getSnapshot(key);
+    // Sem dado anterior, um objeto vazio (a coluna não aceita NULL): o
+    // consumidor faz o guard com `?.` e `?? []`.
     db.insert(schema.snapshots)
-      .values({ key, ts: Date.now(), data: prev?.data ?? null, error })
+      .values({ key, ts: Date.now(), data: prev?.data ?? {}, error })
       .onConflictDoUpdate({ target: schema.snapshots.key, set: { ts: Date.now(), error } })
       .run();
     return;
@@ -41,7 +54,7 @@ export function putSnapshot(key: string, data: unknown, error: string | null = n
 
 export type Severity = "info" | "warn" | "crit";
 
-export function addEvent(kind: string, severity: Severity, title: string, detail?: unknown, serverId?: number): void {
+export function addEvent(kind: string, severity: Severity, title: string, detail?: unknown, serverId?: number | null): void {
   getDb()
     .insert(schema.events)
     .values({ ts: Date.now(), kind, severity, title, detail: detail ?? null, serverId: serverId ?? null })
@@ -70,10 +83,10 @@ export function putSetting(key: string, value: unknown): void {
  * por coleta). `severityDown` cobre estados legítimos "fora do ar" (ex.:
  * serviço intencionalmente inativo), que merecem atenção sem alarde.
  */
-export function trackReachability(key: string, ok: boolean, title: string, error?: string, severityDown: Severity = "crit"): void {
+export function trackReachability(key: string, ok: boolean, title: string, error?: string, severityDown: Severity = "crit", serverId?: number | null): void {
   const prevOk = getSetting<boolean>(`reach:${key}`, true);
   if (prevOk !== ok) {
-    addEvent("reachability", ok ? "info" : severityDown, ok ? `${title} voltou` : `${title} inacessível`, error ? { error } : undefined);
+    addEvent("reachability", ok ? "info" : severityDown, ok ? `${title} voltou` : `${title} inacessível`, error ? { error } : undefined, serverId);
     putSetting(`reach:${key}`, ok);
   }
 }

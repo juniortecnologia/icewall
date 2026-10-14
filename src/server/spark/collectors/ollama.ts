@@ -1,9 +1,31 @@
 import "server-only";
 import { z } from "zod";
 import type { OllamaModel, OllamaSnapshot } from "@/lib/types";
-import { addEvent, getSnapshot, putSnapshot, trackReachability } from "../../lib/store";
+import { addEvent, getServerSnapshot, putSnapshot, serverSnapshotKey, trackReachability } from "../../lib/store";
+import { execOnServer, type ServerRef } from "../../executor";
+import type { ExecResult } from "@/lib/servers/server-driver";
 
-export const OLLAMA_URL = (process.env.OLLAMA_URL ?? "http://10.0.5.18:11434").replace(/\/$/, "");
+/**
+ * Ollama é uma CAPACIDADE OPCIONAL por servidor (Etapa 03): quando o serviço
+ * está inativo, o estado legítimo é "offline" — nem erro, nem lista vazia.
+ * A base URL é derivada do servidor do registro (local → 127.0.0.1; ssh →
+ * host do registro), em vez do env global OLLAMA_URL. O env antigo continua
+ * servindo apenas às ações manuais (allowlist), fora do escopo dos coletores.
+ */
+const OLLAMA_PORT = Number(process.env.OLLAMA_PORT ?? 11434);
+
+/** Legacy: base global usada apenas pelas ações manuais (allowlist). */
+const OLLAMA_URL = (process.env.OLLAMA_URL ?? "http://10.0.5.18:11434").replace(/\/$/, "");
+
+export function ollamaBaseUrl(server: ServerRef): string {
+  const host = server.tipo === "local" ? "127.0.0.1" : server.host;
+  return `http://${host}:${OLLAMA_PORT}`;
+}
+
+/** Sonda, pelo driver do servidor, se a porta do Ollama está escutando. */
+export function ollamaProbeCmd(port = OLLAMA_PORT): string {
+  return `echo @@port@@; (ss -tlnH 2>/dev/null || netstat -tln 2>/dev/null) | grep -qE ':${port}([[:space:]]|$)' && echo LISTEN || echo NONE`;
+}
 
 const details = z
   .object({
@@ -45,12 +67,47 @@ export async function ollamaFetch(path: string, init?: RequestInit, timeoutMs = 
   return res.json();
 }
 
-export async function collectOllama(): Promise<void> {
+async function fetchFrom(base: string, path: string, init?: RequestInit, timeoutMs = 8000): Promise<unknown> {
+  const res = await fetch(`${base}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status} ${await res.text().catch(() => "")}`.trim());
+  return res.json();
+}
+
+type Exec = (serverId: number, cmd: string, timeoutMs?: number) => Promise<ExecResult>;
+
+/** Coleta o estado do Ollama em UM servidor do registro, pelo driver dele (Etapa 03). */
+export async function collectOllama(server: ServerRef, exec: Exec = execOnServer): Promise<void> {
+  const key = serverSnapshotKey(server.id, "ollama");
+  const base = ollamaBaseUrl(server);
+
+  // Primeiro, o estado do serviço — pelo driver do servidor, para distinguir
+  // "serviço inativo" (legítimo) de "servidor inacessível" (erro).
+  const probe = await exec(server.id, ollamaProbeCmd(), 15_000);
+  if (probe.code !== 0 || !probe.stdout.includes("@@port@@")) {
+    const msg = probe.stderr.trim() || `sonda saiu com ${probe.code}`;
+    putSnapshot(key, null, msg);
+    trackReachability(`ollama:${server.id}`, false, `Ollama de ${server.nome}`, msg, "crit", server.id);
+    return;
+  }
+  if (probe.stdout.includes("NONE")) {
+    const snap: OllamaSnapshot = {
+      status: "offline",
+      url: base,
+      version: null,
+      models: [],
+      loaded: [],
+      reason: "serviço inativo",
+    };
+    putSnapshot(key, snap);
+    trackReachability(`ollama:${server.id}`, false, `Ollama de ${server.nome}`, "serviço inativo", "warn", server.id);
+    return;
+  }
+
   try {
     const [version, tags, ps] = await Promise.all([
-      ollamaFetch("/api/version").then((v) => z.object({ version: z.string() }).parse(v).version),
-      ollamaFetch("/api/tags").then((v) => tagsSchema.parse(v)),
-      ollamaFetch("/api/ps").then((v) => psSchema.parse(v)),
+      fetchFrom(base, "/api/version").then((v) => z.object({ version: z.string() }).parse(v).version),
+      fetchFrom(base, "/api/tags").then((v) => tagsSchema.parse(v)),
+      fetchFrom(base, "/api/ps").then((v) => psSchema.parse(v)),
     ]);
     const models: OllamaModel[] = tags.models
       .map((m) => ({
@@ -66,7 +123,8 @@ export async function collectOllama(): Promise<void> {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
     const snap: OllamaSnapshot = {
-      url: OLLAMA_URL,
+      status: "online",
+      url: base,
       version,
       models,
       loaded: ps.models.map((m) => ({
@@ -77,27 +135,27 @@ export async function collectOllama(): Promise<void> {
         contextLength: m.context_length ?? null,
       })),
     };
-    diffModels(getSnapshot<OllamaSnapshot>("ollama")?.data ?? null, snap);
-    putSnapshot("ollama", snap);
-    trackReachability("ollama", true, "Ollama do Spark");
+    const prev = getServerSnapshot<OllamaSnapshot>(server.id, "ollama")?.data ?? null;
+    if (prev?.status === "online") diffModels(prev, snap, server.id);
+    putSnapshot(key, snap);
+    trackReachability(`ollama:${server.id}`, true, `Ollama de ${server.nome}`, undefined, "crit", server.id);
   } catch (err) {
-    putSnapshot("ollama", null, String(err));
-    trackReachability("ollama", false, "Ollama do Spark", String(err));
+    putSnapshot(key, null, String(err));
+    trackReachability(`ollama:${server.id}`, false, `Ollama de ${server.nome}`, String(err), "warn", server.id);
   }
 }
 
-function diffModels(prev: OllamaSnapshot | null, next: OllamaSnapshot): void {
-  if (!prev) return;
+function diffModels(prev: OllamaSnapshot, next: OllamaSnapshot, serverId: number): void {
   const before = new Map(prev.models.map((m) => [m.name, m.digest]));
   const after = new Map(next.models.map((m) => [m.name, m.digest]));
   for (const [name, digest] of after) {
-    if (!before.has(name)) addEvent("model", "info", `Modelo instalado: ${name}`);
-    else if (before.get(name) !== digest) addEvent("model", "info", `Modelo atualizado: ${name}`);
+    if (!before.has(name)) addEvent("model", "info", `Modelo instalado: ${name}`, undefined, serverId);
+    else if (before.get(name) !== digest) addEvent("model", "info", `Modelo atualizado: ${name}`, undefined, serverId);
   }
   for (const name of before.keys()) {
-    if (!after.has(name)) addEvent("model", "warn", `Modelo removido: ${name}`);
+    if (!after.has(name)) addEvent("model", "warn", `Modelo removido: ${name}`, undefined, serverId);
   }
   if (prev.version && next.version && prev.version !== next.version) {
-    addEvent("runtime", "info", `Ollama ${prev.version} → ${next.version}`);
+    addEvent("runtime", "info", `Ollama ${prev.version} → ${next.version}`, undefined, serverId);
   }
 }

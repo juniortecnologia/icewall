@@ -4,8 +4,8 @@ import type { ExecResult } from "@/lib/servers/server-driver";
 import { execOnServer, serverIdByName } from "../executor";
 import { parseSshAuthMethods } from "../parsers";
 
-// Usada apenas fora da via nova: `sparkAuthMethods` e a área de bench
-// (spark-run.ts) ainda não migraram para o registro (etapas seguintes).
+// Usada apenas fora da via nova: a área de bench (spark-run.ts) ainda não
+// migrou para o registro (etapas seguintes).
 export const SPARK_HOST = process.env.SPARK_SSH_HOST ?? "spark";
 
 export type { ExecResult };
@@ -39,10 +39,12 @@ export function shellArg(value: string): string {
 }
 
 /**
- * Tenta entrar no Spark sem chave e sem conexão compartilhada para ver quais métodos o sshd oferece.
- * BatchMode impede que alguma senha seja enviada: o servidor só responde "Permission denied (métodos)".
+ * Tenta entrar em um host sem chave e sem conexão compartilhada para ver
+ * quais métodos o sshd oferece (Etapa 03: host vem do registro, não de
+ * constante). BatchMode impede que alguma senha seja enviada: o servidor só
+ * responde "Permission denied (métodos)".
  */
-export function sparkAuthMethods(timeoutMs = 10_000): Promise<string[] | null> {
+export function sshAuthMethods(host: string, timeoutMs = 10_000): Promise<string[] | null> {
   return new Promise((resolve) => {
     const child = spawn(
       "ssh",
@@ -52,7 +54,7 @@ export function sparkAuthMethods(timeoutMs = 10_000): Promise<string[] | null> {
         "-o", "ControlPath=none",
         "-o", "PubkeyAuthentication=no",
         "-o", "PreferredAuthentications=password,keyboard-interactive",
-        SPARK_HOST,
+        host,
         "true",
       ],
       { stdio: ["ignore", "ignore", "pipe"] },

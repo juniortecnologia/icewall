@@ -6,7 +6,7 @@ import type {
   SecuritySnapshot,
   UpdatesSnapshot,
 } from "@/lib/types";
-import { addEvent, getSnapshot, putSnapshot } from "../../lib/store";
+import { addEvent, getServerSnapshot, putSnapshot, serverSnapshotKey } from "../../lib/store";
 import {
   parseAptUpgradable,
   parseCudaVersion,
@@ -17,8 +17,8 @@ import {
   parseSystemctlFailed,
 } from "../../parsers";
 import { containerPorts, KNOWN_PORTS, securityFindings } from "../findings";
-import { execOnServer, serverIdByName } from "../../executor";
-import { sparkAuthMethods } from "../ssh";
+import { execOnServer, type ServerRef } from "../../executor";
+import { sshAuthMethods } from "../ssh";
 
 const OS_CMD = [
   "echo @@osrel@@; cat /etc/os-release",
@@ -33,17 +33,12 @@ const OS_CMD = [
   "echo @@vllm@@; docker images --format '{{.Repository}}:{{.Tag}}' | grep -i vllm | head -5 | while read i; do echo \"$i $(docker image inspect --format '{{index .Config.Labels \"com.nvidia.vllm.version\"}}' \"$i\")\"; done",
 ].join("; ");
 
-export async function collectOs(): Promise<void> {
-  // Migração incremental (Etapa 02): executor por servidor, Spark resolvido
-  // por nome no registro (não por constante).
-  const sparkId = serverIdByName("Spark");
-  if (sparkId === null) {
-    putSnapshot("os", null, '[icewall] servidor "Spark" não encontrado no registro — cadastre em /servers');
-    return;
-  }
-  const res = await execOnServer(sparkId, OS_CMD, 30_000);
+/** Coleta o SO de UM servidor do registro, pelo driver dele (Etapa 03). */
+export async function collectOs(server: ServerRef): Promise<void> {
+  const key = serverSnapshotKey(server.id, "os");
+  const res = await execOnServer(server.id, OS_CMD, 30_000);
   if (!res.stdout.includes("@@osrel@@")) {
-    putSnapshot("os", null, res.stderr.trim() || `ssh saiu com ${res.code}`);
+    putSnapshot(key, null, res.stderr.trim() || `saída ${res.code}`);
     return;
   }
   const s = parseSections(res.stdout);
@@ -72,7 +67,7 @@ export async function collectOs(): Promise<void> {
         return { image, version };
       }),
   };
-  const prev = getSnapshot<OsSnapshot>("os")?.data;
+  const prev = getServerSnapshot<OsSnapshot>(server.id, "os")?.data;
   if (prev) {
     for (const [label, a, b] of [
       ["Kernel", prev.kernel, snap.kernel],
@@ -80,10 +75,10 @@ export async function collectOs(): Promise<void> {
       ["CUDA", prev.cuda, snap.cuda],
       ["Docker", prev.docker, snap.docker],
     ] as const) {
-      if (a && b && a !== b) addEvent("runtime", "info", `${label}: ${a} → ${b}`);
+      if (a && b && a !== b) addEvent("runtime", "info", `${label}: ${a} → ${b}`, undefined, server.id);
     }
   }
-  putSnapshot("os", snap);
+  putSnapshot(key, snap);
 }
 
 const UPDATES_CMD = [
@@ -92,15 +87,12 @@ const UPDATES_CMD = [
   "echo @@stamp@@; stat -c %Y /var/lib/apt/periodic/update-success-stamp 2>/dev/null || stat -c %Y /var/lib/apt/lists",
 ].join("; ");
 
-export async function collectUpdates(): Promise<void> {
-  const sparkId = serverIdByName("Spark");
-  if (sparkId === null) {
-    putSnapshot("updates", null, '[icewall] servidor "Spark" não encontrado no registro — cadastre em /servers');
-    return;
-  }
-  const res = await execOnServer(sparkId, UPDATES_CMD, 60_000);
+/** Coleta updates (apt) de UM servidor do registro, pelo driver dele (Etapa 03). */
+export async function collectUpdates(server: ServerRef): Promise<void> {
+  const key = serverSnapshotKey(server.id, "updates");
+  const res = await execOnServer(server.id, UPDATES_CMD, 60_000);
   if (!res.stdout.includes("@@apt@@")) {
-    putSnapshot("updates", null, res.stderr.trim() || `ssh saiu com ${res.code}`);
+    putSnapshot(key, null, res.stderr.trim() || `saída ${res.code}`);
     return;
   }
   const s = parseSections(res.stdout);
@@ -111,16 +103,16 @@ export async function collectUpdates(): Promise<void> {
     rebootPackages: rebootLines.filter((l) => l !== "REBOOT"),
     listsUpdatedAt: Number(s.stamp) ? Number(s.stamp) * 1000 : null,
   };
-  const prev = getSnapshot<UpdatesSnapshot>("updates")?.data;
+  const prev = getServerSnapshot<UpdatesSnapshot>(server.id, "updates")?.data;
   if (prev) {
     const known = new Set(prev.packages.map((p) => `${p.name}=${p.version}`));
     const fresh = snap.packages.filter((p) => p.security && !known.has(`${p.name}=${p.version}`));
     if (fresh.length) {
-      addEvent("updates", "warn", `${fresh.length} update(s) de segurança novos`, { packages: fresh.map((p) => p.name) });
+      addEvent("updates", "warn", `${fresh.length} update(s) de segurança novos`, { packages: fresh.map((p) => p.name) }, server.id);
     }
-    if (snap.rebootRequired && !prev.rebootRequired) addEvent("updates", "warn", "Reboot pendente no Spark");
+    if (snap.rebootRequired && !prev.rebootRequired) addEvent("updates", "warn", `Reboot pendente em ${server.nome}`, undefined, server.id);
   }
-  putSnapshot("updates", snap);
+  putSnapshot(key, snap);
 }
 
 const SECURITY_CMD = [
@@ -133,19 +125,16 @@ const SECURITY_CMD = [
   "echo @@sshd@@; grep -hiE '^[[:space:]]*(PasswordAuthentication|PermitRootLogin|PubkeyAuthentication|KbdInteractiveAuthentication)' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null",
 ].join("; ");
 
-export async function collectSecurity(): Promise<void> {
-  const sparkId = serverIdByName("Spark");
-  if (sparkId === null) {
-    putSnapshot("security", null, '[icewall] servidor "Spark" não encontrado no registro — cadastre em /servers');
-    return;
-  }
-  const [res, methods] = await Promise.all([execOnServer(sparkId, SECURITY_CMD, 30_000), sparkAuthMethods()]);
+/** Coleta a superfície de segurança de UM servidor do registro, pelo driver dele (Etapa 03). */
+export async function collectSecurity(server: ServerRef): Promise<void> {
+  const key = serverSnapshotKey(server.id, "security");
+  const [res, methods] = await Promise.all([execOnServer(server.id, SECURITY_CMD, 30_000), sshAuthMethods(server.host)]);
   if (!res.stdout.includes("@@ss@@")) {
-    putSnapshot("security", null, res.stderr.trim() || `ssh saiu com ${res.code}`);
+    putSnapshot(key, null, res.stderr.trim() || `saída ${res.code}`);
     return;
   }
   const s = parseSections(res.stdout);
-  const byContainer = containerPorts(getSnapshot<DockerSnapshot>("docker")?.data);
+  const byContainer = containerPorts(getServerSnapshot<DockerSnapshot>(server.id, "docker")?.data);
   const ports: PortInfo[] = parseSsListen(s.ss ?? "").map((p) => ({
     ...p,
     service: byContainer.get(p.port) ?? KNOWN_PORTS[p.port] ?? null,
@@ -170,12 +159,12 @@ export async function collectSecurity(): Promise<void> {
     clientIp: s.client?.trim() || null,
   };
   const findings = securityFindings(base);
-  const prev = getSnapshot<SecuritySnapshot>("security")?.data;
+  const prev = getServerSnapshot<SecuritySnapshot>(server.id, "security")?.data;
   if (prev) {
     const known = new Set(prev.findings.map((f) => f.key));
-    for (const f of findings) if (!known.has(f.key)) addEvent("security", f.severity, f.title, { detail: f.detail });
+    for (const f of findings) if (!known.has(f.key)) addEvent("security", f.severity, f.title, { detail: f.detail }, server.id);
     const before = new Set(prev.ports.map((p) => p.port));
-    for (const p of ports) if (!before.has(p.port)) addEvent("security", "warn", `Nova porta escutando: ${p.port} (${p.scope})`);
+    for (const p of ports) if (!before.has(p.port)) addEvent("security", "warn", `Nova porta escutando: ${p.port} (${p.scope})`, undefined, server.id);
   }
-  putSnapshot("security", { ...base, findings } satisfies SecuritySnapshot);
+  putSnapshot(key, { ...base, findings } satisfies SecuritySnapshot);
 }

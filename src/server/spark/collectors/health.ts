@@ -1,9 +1,9 @@
 import "server-only";
 import type { ComputeApp, HealthSnapshot } from "@/lib/types";
 import { getDb, schema } from "../../db/client";
-import { putSnapshot, trackReachability } from "../../lib/store";
+import { putSnapshot, serverSnapshotKey, trackReachability } from "../../lib/store";
 import { parseComputeApps, parseDf, parseLoadavg, parseMeminfo, parseNvidiaGpu, parseSections } from "../../parsers";
-import { execOnServer, serverIdByName } from "../../executor";
+import { execOnServer, type ServerRef } from "../../executor";
 
 const HEALTH_CMD = [
   "echo @@gpu@@; nvidia-smi --query-gpu=temperature.gpu,utilization.gpu,power.draw,clocks.sm --format=csv,noheader,nounits",
@@ -20,20 +20,14 @@ export function ollamaGpuBytes(apps: ComputeApp[]): number {
   return apps.filter((a) => isOllamaProcess(a.name)).reduce((sum, a) => sum + (a.usedMiB ?? 0) * 1048576, 0);
 }
 
-export async function collectHealth(): Promise<void> {
-  // Migração incremental (Etapa 02): o coletor passa a usar o executor por
-  // servidor, resolvendo o Spark por nome no registro (não por constante).
-  const sparkId = serverIdByName("Spark");
-  if (sparkId === null) {
-    trackReachability("ssh", false, "Spark (SSH)", '[icewall] servidor "Spark" não encontrado no registro — cadastre em /servers');
-    putSnapshot("health", null, '[icewall] servidor "Spark" não encontrado no registro — cadastre em /servers');
-    return;
-  }
-  const res = await execOnServer(sparkId, HEALTH_CMD);
+/** Coleta a saúde de UM servidor do registro, pelo driver dele (Etapa 03). */
+export async function collectHealth(server: ServerRef): Promise<void> {
+  const key = serverSnapshotKey(server.id, "health");
+  const res = await execOnServer(server.id, HEALTH_CMD);
   const ok = res.code === 0 && res.stdout.includes("@@mem@@");
-  trackReachability("ssh", ok, "Spark (SSH)", res.stderr.trim());
+  trackReachability(`server:${server.id}`, ok, server.nome, res.stderr.trim(), "crit", server.id);
   if (!ok) {
-    putSnapshot("health", null, res.stderr.trim() || `ssh saiu com ${res.code}`);
+    putSnapshot(key, null, res.stderr.trim() || `saída ${res.code}`);
     return;
   }
   const s = parseSections(res.stdout);
@@ -54,11 +48,12 @@ export async function collectHealth(): Promise<void> {
     diskUsed: disk?.used ?? null,
     ollamaVram,
   };
-  putSnapshot("health", snap);
+  putSnapshot(key, snap);
   getDb()
     .insert(schema.metrics)
     .values({
       ts: Date.now(),
+      serverId: server.id,
       gpuUtil: snap.gpu?.util,
       gpuTemp: snap.gpu?.temp,
       gpuPower: snap.gpu?.power,

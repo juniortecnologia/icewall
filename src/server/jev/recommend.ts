@@ -5,7 +5,7 @@ import type { SecuritySnapshot, UpdatesSnapshot } from "@/lib/types";
 import { getDb, schema } from "../db/client";
 import { benchRecs } from "../bench/models-json";
 import { MODELS_JSON } from "../lib/paths";
-import { getSnapshot } from "../lib/store";
+import { primarySnapshot } from "../lib/store";
 import { confidentNoul, delegationRecs, type AnswerMap, type JudgedRun, type Rec, tokenRecs } from "./rules";
 
 /** Último julgamento bem-sucedido por assunto. */
@@ -49,7 +49,7 @@ function judgedRuns(): JudgedRun[] {
 }
 
 function securityRecs(): Rec[] {
-  const sec = getSnapshot<SecuritySnapshot>("security")?.data;
+  const sec = primarySnapshot<SecuritySnapshot>("security")?.data;
   if (!sec) return [];
   const exposure = answersByKind("port");
   return sec.findings.map((f) => {
@@ -71,7 +71,7 @@ function securityRecs(): Rec[] {
 }
 
 function updateRecs(): Rec[] {
-  const updates = getSnapshot<UpdatesSnapshot>("updates")?.data;
+  const updates = primarySnapshot<UpdatesSnapshot>("updates")?.data;
   if (!updates?.packages.length) return [];
   const judged = answersByKind("package");
   const urgent: string[] = [];

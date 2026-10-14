@@ -17,6 +17,9 @@ import { servers } from "./db/schema";
  * snapshot e o painel mostra o erro.
  */
 
+/** Linha do registro `servers` (típico dos coletores por servidor). */
+export type ServerRef = typeof servers.$inferSelect;
+
 /** Id do servidor pelo nome (resolução por nome no registro, não por constante). */
 export function serverIdByName(nome: string): number | null {
   const row = getDb().select({ id: servers.id }).from(servers).where(eq(servers.nome, nome)).limit(1).get();
@@ -29,14 +32,18 @@ export function listServers(): typeof servers.$inferSelect[] {
 }
 
 /**
- * Servidor "principal" para leitura compatível: o Spark, quando cadastrado —
- * toda a série histórica (e o painel antigo) é dele. Senão, o primeiro do
- * registro; null se o registro estiver vazio.
+ * Linha do servidor "principal" para leitura compatível: o Spark, quando
+ * cadastrado — toda a série histórica (e o painel antigo) é dele. Senão, o
+ * primeiro do registro; null se o registro estiver vazio.
  */
+export function primaryServer(): ServerRef | null {
+  const spark = getDb().select().from(servers).where(eq(servers.nome, "Spark")).limit(1).get();
+  if (spark) return spark;
+  return getDb().select().from(servers).orderBy(servers.id).limit(1).get() ?? null;
+}
+
 export function primaryServerId(): number | null {
-  const spark = serverIdByName("Spark");
-  if (spark !== null) return spark;
-  return getDb().select({ id: servers.id }).from(servers).orderBy(servers.id).limit(1).get()?.id ?? null;
+  return primaryServer()?.id ?? null;
 }
 
 /** Marca de falha do executor: code -1 + mensagem clara no stderr. */

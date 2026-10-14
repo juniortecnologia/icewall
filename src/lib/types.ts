@@ -40,10 +40,40 @@ export interface OllamaLoaded {
 }
 
 export interface OllamaSnapshot {
+  /** Ollama é capacidade opcional: "offline" é estado legítimo (serviço inativo), nem erro nem lista vazia. */
+  status: "online" | "offline";
   url: string;
   version: string | null;
   models: OllamaModel[];
   loaded: OllamaLoaded[];
+  /** Presente quando `status` é "offline". */
+  reason?: string;
+}
+
+export interface VllmModel {
+  id: string;
+  object: string;
+  created: number | null;
+  ownedBy: string | null;
+  /** Modelo de imagem (Z-Image, Qwen-Image...) — detectado pelo nome. */
+  isImage: boolean;
+}
+
+export interface VllmSnapshot {
+  /**
+   * vLLM é capacidade opcional por servidor (Etapa 03):
+   * "online": /health + /v1/models + /metrics OK com a chave do registro.
+   * "auth": serviço no ar, mas a chave do registro ainda é rejeitada
+   * (ex.: borda não aplicada) — estado documentado, nem erro nem lista vazia.
+   * "offline": serviço inativo (porta fechada) — estado legítimo.
+   */
+  status: "online" | "auth" | "offline";
+  url: string;
+  models: VllmModel[];
+  /** Métricas `vllm:*` do Prometheus (nome{labels} → valor). */
+  metrics: Record<string, number>;
+  /** Presente quando `status` não é "online". */
+  reason?: string;
 }
 
 export interface ContainerInfo {

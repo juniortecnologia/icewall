@@ -2,7 +2,8 @@ import "server-only";
 import type { DockerSnapshot, OllamaSnapshot } from "@/lib/types";
 import { setKeepAlive, setTierModel } from "../bench/models-json";
 import { getDb, schema } from "../db/client";
-import { addEvent, getSnapshot } from "../lib/store";
+import { primaryServer, primaryServerId } from "../executor";
+import { addEvent, primarySnapshot } from "../lib/store";
 import { collectDocker } from "../spark/collectors/docker";
 import { collectOllama, ollamaFetch } from "../spark/collectors/ollama";
 import { shellArg, sparkExec } from "../spark/ssh";
@@ -30,15 +31,23 @@ interface ActionDef {
 }
 
 function requireContainer(name: string): string {
-  const known = getSnapshot<DockerSnapshot>("docker")?.data?.containers.map((c) => c.name) ?? [];
+  const known = primarySnapshot<DockerSnapshot>("docker")?.data?.containers.map((c) => c.name) ?? [];
   if (!known.includes(name)) throw new Error(`container desconhecido: ${name}`);
   return shellArg(name);
 }
 
 function requireModel(name: string): string {
-  const known = getSnapshot<OllamaSnapshot>("ollama")?.data?.models.map((m) => m.name) ?? [];
+  const known = primarySnapshot<OllamaSnapshot>("ollama")?.data?.models.map((m) => m.name) ?? [];
   if (!known.includes(name)) throw new Error(`modelo não instalado: ${name}`);
   return name;
+}
+
+/** Relê o snapshot do servidor principal (Etapa 03) depois de uma ação. */
+async function refreshPrimary(kind: "docker" | "ollama"): Promise<void> {
+  const server = primaryServer();
+  if (!server) throw new Error("nenhum servidor cadastrado no registro — nada para reler");
+  if (kind === "docker") await collectDocker(server);
+  else await collectOllama(server);
 }
 
 async function docker(cmd: string, timeoutMs = 60_000): Promise<string> {
@@ -55,7 +64,7 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
     mutating: true,
     run: async (t) => {
       const out = await docker(`docker start ${requireContainer(t)}`);
-      await collectDocker();
+      await refreshPrimary("docker");
       return out;
     },
   },
@@ -64,7 +73,7 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
     mutating: true,
     run: async (t) => {
       const out = await docker(`docker stop ${requireContainer(t)}`);
-      await collectDocker();
+      await refreshPrimary("docker");
       return out;
     },
   },
@@ -73,7 +82,7 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
     mutating: true,
     run: async (t) => {
       const out = await docker(`docker restart ${requireContainer(t)}`, 120_000);
-      await collectDocker();
+      await refreshPrimary("docker");
       return out;
     },
   },
@@ -87,7 +96,7 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
     mutating: true,
     run: async (t) => {
       await ollamaFetch("/api/generate", { method: "POST", headers: json, body: JSON.stringify({ model: requireModel(t), keep_alive: "30m" }) }, 300_000);
-      await collectOllama();
+      await refreshPrimary("ollama");
       return `${t} carregado`;
     },
   },
@@ -96,7 +105,7 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
     mutating: true,
     run: async (t) => {
       await ollamaFetch("/api/generate", { method: "POST", headers: json, body: JSON.stringify({ model: requireModel(t), keep_alive: 0 }) });
-      await collectOllama();
+      await refreshPrimary("ollama");
       return `${t} descarregado`;
     },
   },
@@ -107,7 +116,7 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
       shellArg(t); // mesmo formato de nome aceito em qualquer outro lugar
       const source = getModelSources()[t];
       if (source) {
-        const wasLoaded = getSnapshot<OllamaSnapshot>("ollama")?.data?.loaded.some((model) => model.name === t) ?? false;
+        const wasLoaded = primarySnapshot<OllamaSnapshot>("ollama")?.data?.loaded.some((model) => model.name === t) ?? false;
         const current = (await ollamaFetch("/api/show", {
           method: "POST",
           headers: json,
@@ -138,12 +147,12 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
               300_000,
             );
           } catch (err) {
-            await collectOllama();
+            await refreshPrimary("ollama");
             const message = err instanceof Error ? err.message : String(err);
             throw new Error(`${t} foi recriado, mas não foi possível reiniciá-lo com a nova versão: ${message}`);
           }
         }
-        await collectOllama();
+        await refreshPrimary("ollama");
         return `${t} recriado a partir de ${source}${wasLoaded ? " e carregado novamente" : ""}: ${created.status ?? "ok"}`;
       }
       let res: { status?: string };
@@ -162,7 +171,7 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
         }
         throw err;
       }
-      await collectOllama();
+      await refreshPrimary("ollama");
       return res.status ?? "ok";
     },
   },
@@ -181,7 +190,7 @@ export const ACTIONS: Record<ActionId, ActionDef> = {
     run: async (t) => {
       const res = await fetch(`${process.env.OLLAMA_URL ?? "http://10.0.5.18:11434"}/api/delete`, { method: "DELETE", headers: json, body: JSON.stringify({ model: requireModel(t) }) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      await collectOllama();
+      await refreshPrimary("ollama");
       return `${t} removido`;
     },
   },
@@ -222,11 +231,12 @@ export async function runAction(id: ActionId, target: string, arg?: string): Pro
     output = err instanceof Error ? err.message : String(err);
   }
   if (def.mutating) {
+    const serverId = primaryServerId();
     getDb()
       .insert(schema.actionLog)
-      .values({ ts: Date.now(), action: id, target: arg ? `${target} → ${arg}` : target, status: ok ? "ok" : "error", output: output.slice(-4000), durationMs: Date.now() - started })
+      .values({ ts: Date.now(), action: id, target: arg ? `${target} → ${arg}` : target, status: ok ? "ok" : "error", output: output.slice(-4000), durationMs: Date.now() - started, serverId })
       .run();
-    addEvent("action", ok ? "info" : "warn", `${def.label}: ${target}${arg ? ` → ${arg}` : ""}${ok ? "" : " (falhou)"}`);
+    addEvent("action", ok ? "info" : "warn", `${def.label}: ${target}${arg ? ` → ${arg}` : ""}${ok ? "" : " (falhou)"}`, undefined, serverId);
   }
   return { ok, output };
 }

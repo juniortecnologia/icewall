@@ -17,7 +17,7 @@ import { answersByKind } from "./jev/recommend";
 import { isSuccess, type AnswerMap } from "./jev/rules";
 import { CENARIOS, lerCombinacoes, META_CONC, META_TOK_S, META_TTFT_S, resumoCarga, type ResumoCarga } from "./bench/spark";
 import { custoJev } from "./crivo/store";
-import { getSnapshot, recentEvents } from "./lib/store";
+import { primarySnapshot, recentEvents } from "./lib/store";
 import { getModelSources } from "./models/sources";
 import { jobStates } from "./scheduler";
 
@@ -25,11 +25,11 @@ const DAY = 86_400_000;
 
 export function overview() {
   const db = getDb();
-  const health = getSnapshot<HealthSnapshot>("health");
-  const ollama = getSnapshot<OllamaSnapshot>("ollama");
-  const docker = getSnapshot<DockerSnapshot>("docker");
-  const updates = getSnapshot<UpdatesSnapshot>("updates");
-  const security = getSnapshot<SecuritySnapshot>("security");
+  const health = primarySnapshot<HealthSnapshot>("health");
+  const ollama = primarySnapshot<OllamaSnapshot>("ollama");
+  const docker = primarySnapshot<DockerSnapshot>("docker");
+  const updates = primarySnapshot<UpdatesSnapshot>("updates");
+  const security = primarySnapshot<SecuritySnapshot>("security");
   const since = Date.now() - 7 * DAY;
   const runs = db
     .select({ exitCode: schema.delegateRuns.exitCode, runId: schema.delegateRuns.runId, evalTokens: schema.delegateRuns.evalTokens })
@@ -268,11 +268,11 @@ export function tokens(days: number) {
 export function system() {
   const pkgJudged = answersByKind("package");
   const portJudged = answersByKind("port");
-  const updates = getSnapshot<UpdatesSnapshot>("updates");
-  const security = getSnapshot<SecuritySnapshot>("security");
+  const updates = primarySnapshot<UpdatesSnapshot>("updates");
+  const security = primarySnapshot<SecuritySnapshot>("security");
   return {
-    os: getSnapshot<OsSnapshot>("os"),
-    ollamaVersion: getSnapshot<OllamaSnapshot>("ollama")?.data?.version ?? null,
+    os: primarySnapshot<OsSnapshot>("os"),
+    ollamaVersion: primarySnapshot<OllamaSnapshot>("ollama")?.data?.version ?? null,
     updates: updates && {
       ...updates,
       data: updates.data && {
@@ -307,7 +307,7 @@ export function system() {
 }
 
 export function containers() {
-  const docker = getSnapshot<DockerSnapshot>("docker");
+  const docker = primarySnapshot<DockerSnapshot>("docker");
   const since = Date.now() - 6 * 3_600_000;
   const c = schema.containerStats;
   const history = getDb()
@@ -320,7 +320,7 @@ export function containers() {
 }
 
 export function models() {
-  const ollama = getSnapshot<OllamaSnapshot>("ollama");
+  const ollama = primarySnapshot<OllamaSnapshot>("ollama");
   const cfg = readModelsJson();
   const tiers = Object.entries(cfg?.tiers ?? {}).map(([name, t]) => ({ name, model: t.model, fallback: t.fallback ?? [], backend: tierBackend(cfg!, name) }));
   const usage = getDb()
@@ -358,7 +358,7 @@ export function bench() {
     runs: db.select().from(schema.benchRuns).orderBy(desc(schema.benchRuns.id)).limit(30).all(),
     board: leaderboard(benchRows(), benchWeights()),
     weights: benchWeights(),
-    models: getSnapshot<OllamaSnapshot>("ollama")?.data?.models.filter((m) => m.capabilities.includes("completion")).map((m) => m.name) ?? [],
+    models: primarySnapshot<OllamaSnapshot>("ollama")?.data?.models.filter((m) => m.capabilities.includes("completion")).map((m) => m.name) ?? [],
     // Só os níveis do Ollama: o ranking e o "Aplicar no models.json" não valem para um nível no vLLM.
     tiers: ollamaTiers(),
     spark: {
@@ -425,7 +425,7 @@ export function auditor() {
   if (crivo.n) byKind.push({ kind: "prompt", n: crivo.n, input: crivo.entrada });
   return {
     jev: { enabled: jevEnabled(), model: JEV_MODEL },
-    sparkCheckedAt: getSnapshot("security")?.ts ?? null,
+    sparkCheckedAt: primarySnapshot("security")?.ts ?? null,
     totals: totals && {
       ...totals,
       calls: (totals.calls ?? 0) + crivo.n,

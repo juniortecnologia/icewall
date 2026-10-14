@@ -10,6 +10,8 @@ import { collectDocker } from "./spark/collectors/docker";
 import { collectHealth } from "./spark/collectors/health";
 import { collectOllama } from "./spark/collectors/ollama";
 import { collectOs, collectSecurity, collectUpdates } from "./spark/collectors/system";
+import { collectVllm } from "./vllm/collector";
+import { listServers, type ServerRef } from "./executor";
 
 const S = 1000;
 const M = 60 * S;
@@ -28,8 +30,12 @@ export interface JobState {
 function retention(): void {
   const db = getDb();
   const week = Date.now() - 7 * 24 * H;
-  // Depois de 7 dias fica uma amostra por hora (a primeira de cada hora).
-  db.run(sql`delete from metrics where ts < ${week} and id not in (select min(id) from metrics where ts < ${week} group by ts / 3600000)`);
+  // Depois de 7 dias fica uma amostra por hora POR SERVIDOR (a primeira de cada hora).
+  db.run(
+    sql`delete from metrics where ts < ${week} and id not in (
+      select min(id) from metrics where ts < ${week} group by server_id, ts / 3600000
+    )`,
+  );
   db.delete(schema.containerStats).where(lt(schema.containerStats.ts, week)).run();
   db.delete(schema.events).where(lt(schema.events.ts, Date.now() - 90 * 24 * H)).run();
 }
@@ -39,14 +45,25 @@ async function audit(): Promise<void> {
   rebuildRecommendations();
 }
 
+/**
+ * Etapa 03: os jobs de monitoração iteram sobre o registro `servers`
+ * (não mais sobre um servidor constante): cada servidor cadastrado é
+ * coletado pelo driver dele, em paralelo.
+ */
+async function eachServer<T>(fn: (server: ServerRef) => Promise<T>): Promise<void> {
+  const servers = listServers();
+  await Promise.all(servers.map((server) => fn(server)));
+}
+
 const JOBS: { name: string; label: string; intervalMs: number; fn: () => Promise<unknown> | unknown }[] = [
-  { name: "ollama", label: "Ollama (modelos, carregados)", intervalMs: 30 * S, fn: collectOllama },
-  { name: "health", label: "Saúde (GPU, memória, CPU, disco)", intervalMs: 15 * S, fn: collectHealth },
-  { name: "docker", label: "Containers", intervalMs: 60 * S, fn: collectDocker },
+  { name: "ollama", label: "Ollama (modelos, carregados)", intervalMs: 30 * S, fn: () => eachServer((s) => collectOllama(s)) },
+  { name: "vllm", label: "vLLM (modelos, status, métricas)", intervalMs: 15 * S, fn: () => eachServer((s) => collectVllm(s)) },
+  { name: "health", label: "Saúde (GPU, memória, CPU, disco)", intervalMs: 15 * S, fn: () => eachServer((s) => collectHealth(s)) },
+  { name: "docker", label: "Containers", intervalMs: 60 * S, fn: () => eachServer((s) => collectDocker(s)) },
   { name: "delegations", label: "Delegações (runs.jsonl)", intervalMs: 30 * S, fn: ingestDelegateRuns },
-  { name: "security", label: "Segurança", intervalMs: 15 * M, fn: collectSecurity },
-  { name: "os", label: "SO e runtimes", intervalMs: 6 * H, fn: collectOs },
-  { name: "updates", label: "Updates (apt)", intervalMs: 6 * H, fn: collectUpdates },
+  { name: "security", label: "Segurança", intervalMs: 15 * M, fn: () => eachServer((s) => collectSecurity(s)) },
+  { name: "os", label: "SO e runtimes", intervalMs: 6 * H, fn: () => eachServer((s) => collectOs(s)) },
+  { name: "updates", label: "Updates (apt)", intervalMs: 6 * H, fn: () => eachServer((s) => collectUpdates(s)) },
   { name: "claude", label: "Tokens do Claude (transcripts)", intervalMs: 5 * M, fn: ingestClaudeUsage },
   { name: "auditor", label: "Auditor Jev + recomendações", intervalMs: 5 * M, fn: audit },
   { name: "bench", label: "Fila de benchmarks", intervalMs: 5 * S, fn: processBenchQueue },
@@ -59,7 +76,7 @@ export function jobStates(): JobState[] {
   return [...(g.__icewallJobs?.values() ?? [])];
 }
 
-/** "Verificar agora": relê o estado do Spark (que muda quando alguém aplica uma recomendação) e só então audita. */
+/** "Verificar agora": relê o estado dos servidores (que muda quando alguém aplica uma recomendação) e só então audita. */
 export async function recheck(): Promise<void> {
   await Promise.all([runJob("security"), runJob("updates"), runJob("os")]);
   await runJob("auditor");

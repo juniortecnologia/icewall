@@ -7,7 +7,8 @@ import { eq } from "drizzle-orm";
 import type { OllamaSnapshot } from "@/lib/types";
 import { getDb, schema } from "../db/client";
 import { DELEGATE_BIN } from "../lib/paths";
-import { addEvent, getSnapshot } from "../lib/store";
+import { addEvent, primarySnapshot } from "../lib/store";
+import { serverIdByName } from "../executor";
 import { ollamaGpuBytes } from "../spark/collectors/health";
 import { ollamaFetch } from "../spark/collectors/ollama";
 import { parseComputeApps } from "../parsers";
@@ -116,9 +117,9 @@ async function perfModel(run: BenchRun, model: string, sample: number, onItem: (
 
 async function perfModelLocked(run: BenchRun, model: string, sample: number, onItem: (label: string) => void) {
   const db = getDb();
-  const info = getSnapshot<OllamaSnapshot>("ollama")?.data?.models.find((m) => m.name === model);
+  const info = primarySnapshot<OllamaSnapshot>("ollama")?.data?.models.find((m) => m.name === model);
   const think = info?.capabilities.includes("thinking") ? false : undefined;
-  const loaded = getSnapshot<OllamaSnapshot>("ollama")?.data?.loaded ?? [];
+  const loaded = primarySnapshot<OllamaSnapshot>("ollama")?.data?.loaded ?? [];
   for (const m of loaded) await unload(m.name);
 
   onItem(`${model} · carga a frio`);
@@ -266,7 +267,7 @@ async function executeSpark(run: BenchRun) {
   }, 12 * 3600);
   if (cancelled(run.id)) return;
   progress(run.id, { status: "done", done: total, current: null, finishedAt: Date.now() });
-  addEvent("bench", "info", `Bancada do Spark #${run.id} concluída`, { combinacoes: run.models });
+  addEvent("bench", "info", `Bancada do Spark #${run.id} concluída`, { combinacoes: run.models }, serverIdByName("Spark"));
 }
 
 async function execute(run: BenchRun) {
@@ -294,7 +295,7 @@ async function execute(run: BenchRun) {
     }
   }
   progress(run.id, { status: "done", done: total, current: null, finishedAt: Date.now() });
-  addEvent("bench", "info", `Benchmark #${run.id} (${run.kind}) concluído`, { models: run.models });
+  addEvent("bench", "info", `Benchmark #${run.id} (${run.kind}) concluído`, { models: run.models }, serverIdByName("Spark"));
 }
 
 /** Chamado pelo agendador: executa o próximo benchmark da fila, um por vez. */
