@@ -13,7 +13,10 @@ import {
   LogOut,
   RefreshCw,
   HardDrive,
-  Settings
+  Settings,
+  Key,
+  Trash2,
+  Edit3,
 } from "lucide-react";
 import { useServer } from "@/components/server-context";
 
@@ -31,6 +34,17 @@ interface Cluster {
   activeModelsCount?: number;
 }
 
+interface TrainServer {
+  id: number;
+  nome: string;
+  tipo: "spark" | "generic";
+  host: string;
+  porta: number;
+  usuario: string;
+  criadoEm: number;
+  atualizadoEm: number;
+}
+
 export default function ClustersPage() {
   const router = useRouter();
   const { setActiveServer } = useServer();
@@ -42,6 +56,18 @@ export default function ClustersPage() {
   const [newSshHost, setNewSshHost] = useState("10.0.5.18");
   const [newSshUser, setNewSshUser] = useState("facini");
   const [newType, setNewType] = useState("dgx-spark");
+
+  // ── Train Servers ───────────────────────────────────────────────────────
+  const [trainServers, setTrainServers] = useState<TrainServer[]>([]);
+  const [loadingTrains, setLoadingTrains] = useState(true);
+  const [showAddServerModal, setShowAddServerModal] = useState(false);
+  const [editingServerId, setEditingServerId] = useState<number | null>(null);
+  const [trainNome, setTrainNome] = useState("");
+  const [trainTipo, setTrainTipo] = useState<"spark" | "generic">("spark");
+  const [trainHost, setTrainHost] = useState("");
+  const [trainPorta, setTrainPorta] = useState(22);
+  const [trainUsuario, setTrainUsuario] = useState("");
+  const [trainKeyPath, setTrainKeyPath] = useState("/home/facini/.ssh/id_ed25519");
 
   const loadClusters = async () => {
     try {
@@ -58,8 +84,115 @@ export default function ClustersPage() {
     }
   };
 
+  const loadTrainServers = async () => {
+    try {
+      setLoadingTrains(true);
+      const res = await fetch("/api/train/servers");
+      const data = await res.json();
+      if (data.ok) setTrainServers(data.servers);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingTrains(false);
+    }
+  };
+
+  const openAddServerModal = () => {
+    setEditingServerId(null);
+    setTrainNome("");
+    setTrainTipo("spark");
+    setTrainHost("");
+    setTrainPorta(22);
+    setTrainUsuario("");
+    setTrainKeyPath("/home/facini/.ssh/id_ed25519");
+    setShowAddServerModal(true);
+  };
+
+  const openEditServerModal = (server: TrainServer) => {
+    setEditingServerId(server.id);
+    setTrainNome(server.nome);
+    setTrainTipo(server.tipo);
+    setTrainHost(server.host);
+    setTrainPorta(server.porta);
+    setTrainUsuario(server.usuario);
+    setTrainKeyPath("[ocultado por segurança]");
+    setShowAddServerModal(true);
+  };
+
+  const handleAddServer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!trainNome || !trainHost || !trainUsuario) return;
+
+    try {
+      const res = await fetch("/api/train/servers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome: trainNome,
+          tipo: trainTipo,
+          host: trainHost,
+          porta: trainPorta,
+          usuario: trainUsuario,
+          chaveSshPath: trainKeyPath.replace("[ocultado por segurança]", ""),
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setShowAddServerModal(false);
+        loadTrainServers();
+      } else if (data.error === "nome_duplicado") {
+        alert(data.message);
+      } else {
+        alert(`Erro: ${data.error || "Desconhecido"}`);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateServer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingServerId || !trainNome || !trainHost || !trainUsuario) return;
+
+    try {
+      const res = await fetch(`/api/train/servers?id=${editingServerId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome: trainNome,
+          tipo: trainTipo,
+          host: trainHost,
+          porta: trainPorta,
+          usuario: trainUsuario,
+          chaveSshPath: trainKeyPath.replace("[ocultado por segurança]", "") || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setShowAddServerModal(false);
+        loadTrainServers();
+      } else {
+        alert(`Erro: ${data.error || "Desconhecido"}`);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteServer = async (id: number, nome: string) => {
+    if (!confirm(`Remover servidor "${nome}"?`)) return;
+    try {
+      const res = await fetch(`/api/train/servers?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.ok) loadTrainServers();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     loadClusters();
+    loadTrainServers();
   }, []);
 
   const handleLogout = async () => {
@@ -258,6 +391,101 @@ export default function ClustersPage() {
         )}
       </div>
 
+      {/* ── Seção: Servidores de Treinamento ─────────────────────────── */}
+      <div className="mt-14">
+        <div className="flex items-center justify-between mb-6 pb-4 border-b border-line">
+          <div>
+            <h2 className="text-lg font-bold text-ink tracking-tight">Servidores de Treinamento</h2>
+            <p className="text-xs text-ink-3 mt-0.5">
+              Gerencie os servidores remotos usados para job de fine-tune e ingestão de datasets.
+            </p>
+          </div>
+          <button
+            onClick={openAddServerModal}
+            className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 text-xs font-medium rounded-lg border border-cyan-500/20 transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Novo Servidor</span>
+          </button>
+        </div>
+
+        {loadingTrains ? (
+          <div className="flex items-center justify-center py-12 text-ink-3">
+            <RefreshCw className="w-5 h-5 animate-spin mr-2" />
+            <span>Carregando servidores...</span>
+          </div>
+        ) : trainServers.length === 0 ? (
+          <div className="border border-dashed border-line rounded-2xl p-10 text-center bg-surface-2/30">
+            <Key className="w-10 h-10 text-ink-3 mx-auto mb-3" />
+            <h3 className="text-sm font-semibold text-ink">Nenhum servidor de treinamento cadastrado</h3>
+            <p className="text-xs text-ink-3 mt-1 max-w-sm mx-auto">
+              Adicione servidores remotos para executar fine-tunes e ingestão de datasets.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto rounded-xl border border-line bg-surface/60">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-line">
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">Nome</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">Tipo</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">Host:Porta</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">Usuário</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">Chave SSH</th>
+                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-ink-3 uppercase">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trainServers.map((srv) => (
+                    <tr key={srv.id} className="border-b border-line-soft last:border-b-0 hover:bg-surface-2/60 transition-colors">
+                      <td className="px-4 py-3 font-medium text-ink">{srv.nome}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium ${
+                          srv.tipo === "spark"
+                            ? "bg-violet-500/10 text-violet-300 border border-violet-500/20"
+                            : "bg-slate-500/10 text-slate-300 border border-slate-500/20"
+                        }`}>
+                          {srv.tipo === "spark" ? "✨ Spark GPU" : "🖥 Genérico"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-ink-2 font-mono text-xs">{srv.host}:{srv.porta}</td>
+                      <td className="px-4 py-3 text-ink-2 font-mono text-xs">@{srv.usuario}</td>
+                      <td className="px-4 py-3">
+                        <span className="text-[11px] font-mono text-ink-3 truncate max-w-[160px] block" title={srv.id === editingServerId ? "[ocultado]" : "[caminho da chave SSH]"}>
+                          {srv.id === editingServerId ? "••••••••" : "/home/.../id_*"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => openEditServerModal(srv)}
+                            className="p-1.5 rounded-md bg-surface-2 hover:bg-surface-2/80 border border-line-soft text-ink-3 hover:text-ice transition-colors cursor-pointer"
+                            title="Editar"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteServer(srv.id, srv.nome)}
+                            className="p-1.5 rounded-md bg-surface-2 hover:bg-rose-500/20 border border-line-soft text-ink-3 hover:text-rose-400 transition-colors cursor-pointer"
+                            title="Remover servidor"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-[11px] text-ink-3">
+              {trainServers.length} servidor{trainServers.length !== 1 ? "es" : ""} cadastrado{trainServers.length !== 1 ? "s" : ""}
+            </p>
+          </>
+        )}
+      </div>
+
       {/* Modal Adicionar Servidor */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -338,6 +566,98 @@ export default function ClustersPage() {
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-xl transition-colors cursor-pointer"
                 >
                   Cadastrar Servidor
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Adicionar/Editar Servidor de Treinamento */}
+      {showAddServerModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#0f172a] border border-[#1e293b] rounded-2xl p-6 max-w-md w-full shadow-2xl">
+            <h2 className="text-lg font-bold text-white mb-1">
+              {editingServerId ? "Editar Servidor" : "Novo Servidor de Treinamento"}
+            </h2>
+            <p className="text-xs text-slate-400 mb-4">Conecte um nó remoto para fine-tune e datasets.</p>
+
+            <form onSubmit={editingServerId ? handleUpdateServer : handleAddServer} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Nome</label>
+                <input
+                  type="text"
+                  value={trainNome}
+                  onChange={(e) => setTrainNome(e.target.value)}
+                  placeholder="ex: Spark GPU 01"
+                  required
+                  className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Tipo</label>
+                <select
+                  value={trainTipo}
+                  onChange={(e) => setTrainTipo(e.target.value as "spark" | "generic")}
+                  className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="spark">Spark GPU (NVIDIA Blackwell)</option>
+                  <option value="generic">Genérico</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-[1fr_80px] gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Host</label>
+                  <input
+                    type="text"
+                    value={trainHost}
+                    onChange={(e) => setTrainHost(e.target.value)}
+                    placeholder="10.0.5.8"
+                    required
+                    className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Porta</label>
+                  <input
+                    type="number"
+                    value={trainPorta}
+                    onChange={(e) => setTrainPorta(Number(e.target.value))}
+                    min={1}
+                    max={65535}
+                    required
+                    className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Usuário SSH</label>
+                <input
+                  type="text"
+                  value={trainUsuario}
+                  onChange={(e) => setTrainUsuario(e.target.value)}
+                  placeholder="facini"
+                  required
+                  className="w-full px-3 py-2 bg-[#090d16] border border-[#1e293b] rounded-xl text-sm text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-4 border-t border-[#1e293b]">
+                <button
+                  type="button"
+                  onClick={() => setShowAddServerModal(false)}
+                  className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-900 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  {editingServerId ? "Salvar Alterações" : "Cadastrar"}
                 </button>
               </div>
             </form>

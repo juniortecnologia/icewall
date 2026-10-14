@@ -350,6 +350,24 @@ export const saasAuditLogs = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
+// Fase 0: infraestrutura multi-servidor (gerenciamento de servidores remotos)
+
+export const trainServers = sqliteTable(
+  "train_servers",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    nome: text("nome").notNull().unique(),
+    tipo: text("tipo", { enum: ["spark", "generic"] }).notNull(),
+    host: text("host").notNull(),
+    porta: integer("porta").default(22),
+    usuario: text("usuario").notNull(),
+    chaveSshPath: text("chave_ssh_path").notNull(),
+    criadoEm: integer("criado_em").notNull().default(now),
+    atualizadoEm: integer("atualizado_em").notNull().default(now),
+  },
+);
+
 // Fine-tune: treinos Unsloth rodando no Spark (GPU)
 
 export const fineTuneRuns = sqliteTable(
