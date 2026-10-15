@@ -1,10 +1,27 @@
 import { NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
+import { z } from "zod";
 import { getDb } from "@/server/db/client";
 import { saasUsers } from "@/server/db/schema";
 import { getSession } from "@/server/auth/session";
 import { hashPassword } from "@/server/auth/crypto";
 import { recordAuditLog } from "@/server/auth/audit";
+import { validationError, errorResponse } from "@/server/api";
+
+interface RouteParams {
+  params: Promise<{ id: string }>;
+}
+
+const userUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  email: z.string().email().optional(),
+  role: z.enum(["admin", "operator", "viewer"]).optional(),
+});
+
+const userActionSchema = z.object({
+  action: z.enum(["reset_password", "reset_2fa"]),
+  newPassword: z.string().min(6).optional(),
+});
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -22,8 +39,13 @@ export async function PUT(req: Request, { params }: RouteParams) {
     }
 
     const { id } = await params;
-    const body = await req.json();
-    const { name, email, role } = body;
+    const rawBody = await req.json().catch(() => null);
+    const parsed = userUpdateSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      const issues = parsed.error.issues;
+      return validationError("Payload inválido: " + issues.map((e) => e.message).join(", "));
+    }
+    const { name, email, role } = parsed.data;
 
     const db = getDb();
     const user = db.select().from(saasUsers).where(and(eq(saasUsers.id, id), eq(saasUsers.tenantId, session.tenantId))).get();
@@ -38,7 +60,7 @@ export async function PUT(req: Request, { params }: RouteParams) {
 
     if (name) updates.name = name.trim();
     if (email) updates.email = email.toLowerCase().trim();
-    if (role && ["admin", "operator", "viewer"].includes(role)) {
+    if (role) {
       // Impede que o próprio admin retire seu próprio papel de admin
       if (user.id === session.userId && role !== "admin") {
         return NextResponse.json({ ok: false, error: "Você não pode revogar seu próprio privilégio de admin" }, { status: 400 });
@@ -54,9 +76,8 @@ export async function PUT(req: Request, { params }: RouteParams) {
     });
 
     return NextResponse.json({ ok: true, user: { ...user, ...updates } });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Erro interno";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  } catch (err) {
+    return errorResponse(err, "admin/users/[id]/put");
   }
 }
 
@@ -72,8 +93,13 @@ export async function PATCH(req: Request, { params }: RouteParams) {
     }
 
     const { id } = await params;
-    const body = await req.json();
-    const { action, newPassword } = body;
+    const rawBody = await req.json().catch(() => null);
+    const parsed = userActionSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      const issues = parsed.error.issues;
+      return validationError("Payload inválido: " + issues.map((e) => e.message).join(", "));
+    }
+    const { action, newPassword } = parsed.data;
 
     const db = getDb();
     const user = db.select().from(saasUsers).where(and(eq(saasUsers.id, id), eq(saasUsers.tenantId, session.tenantId))).get();
@@ -122,9 +148,8 @@ export async function PATCH(req: Request, { params }: RouteParams) {
     }
 
     return NextResponse.json({ ok: false, error: "Ação não suportada" }, { status: 400 });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Erro interno";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  } catch (err) {
+    return errorResponse(err, "admin/users/[id]/patch");
   }
 }
 
@@ -160,8 +185,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
     });
 
     return NextResponse.json({ ok: true, message: "Usuário excluído com sucesso" });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Erro interno";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  } catch (err) {
+    return errorResponse(err, "admin/users/[id]/delete");
   }
 }

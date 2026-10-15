@@ -315,7 +315,7 @@ describe("PATCH /api/admin/users/:id", () => {
     );
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.error).toBe("A nova senha deve ter pelo menos 6 caracteres");
+    expect(data.error).toContain("Payload inválido");
   });
 
   it("redefine senha do usuário", async () => {
@@ -351,7 +351,7 @@ describe("PATCH /api/admin/users/:id", () => {
     );
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.error).toBe("Ação não suportada");
+    expect(data.error).toContain("Payload inválido");
   });
 });
 

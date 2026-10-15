@@ -4,6 +4,7 @@ import { getDb } from "@/server/db/client";
 import { saasUsers } from "@/server/db/schema";
 import { getSession } from "@/server/auth/session";
 import { generateTwoFactorSecret, getTwoFactorOtpAuthUrl, generateQrCodeDataUrl } from "@/server/auth/totp";
+import { errorResponse } from "@/server/api";
 
 export async function GET() {
   try {
@@ -31,15 +32,15 @@ export async function GET() {
     const otpAuthUrl = getTwoFactorOtpAuthUrl(user.email, secret);
     const qrCodeDataUrl = await generateQrCodeDataUrl(otpAuthUrl);
 
+    // NÃO retornar o secret no response — apenas otpAuthUrl e qrCode
+    // O secret fica salvo no banco e o usuário configura via QR code
     return NextResponse.json({
       ok: true,
-      secret,
       otpAuthUrl,
       qrCode: qrCodeDataUrl,
       enabled: Boolean(user.twoFactorEnabled),
     });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Erro interno no servidor";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  } catch (err) {
+    return errorResponse(err, "auth/2fa/setup");
   }
 }

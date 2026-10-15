@@ -273,7 +273,7 @@ describe("GET /api/auth/2fa/setup", () => {
     expect(res.status).toBe(401);
   });
 
-  it("retorna 200 com secret, otpAuthUrl e qrCode para usuário autenticado", async () => {
+  it("retorna 200 com otpAuthUrl e qrCode para usuário autenticado (sem secret no response)", async () => {
     const { verifySession } = await import("@/server/auth/jwt");
     vi.mocked(verifySession).mockResolvedValueOnce({
       userId: "user_admin_01",
@@ -294,7 +294,7 @@ describe("GET /api/auth/2fa/setup", () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.ok).toBe(true);
-    expect(data.secret).toBeDefined();
+    expect(data.secret).toBeUndefined();
     expect(data.otpAuthUrl).toContain("otpauth://totp/");
     expect(data.qrCode).toContain("data:image/png;base64,");
     expect(data.enabled).toBe(false);

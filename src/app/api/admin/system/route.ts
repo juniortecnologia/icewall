@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { z } from "zod";
 import { getSession } from "@/server/auth/session";
 import { recordAuditLog } from "@/server/auth/audit";
 import { getDb } from "@/server/db/client";
 import { saasTenants, saasClusters, saasUsers } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
+import { validationError, errorResponse } from "@/server/api";
 
 const execAsync = promisify(exec);
+
+const systemActionSchema = z.object({
+  action: z.enum(["check_update", "apply_update"]),
+});
 
 export async function GET() {
   try {
@@ -64,9 +70,8 @@ export async function GET() {
         },
       },
     });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Erro interno";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  } catch (err) {
+    return errorResponse(err, "admin/system/get");
   }
 }
 
@@ -81,8 +86,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Apenas administradores podem atualizar o sistema" }, { status: 403 });
     }
 
-    const body = await req.json();
-    const { action } = body;
+    const rawBody = await req.json().catch(() => null);
+    const parsed = systemActionSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      const issues = parsed.error.issues;
+      return validationError("Payload inválido: " + issues.map((e) => e.message).join(", "));
+    }
+    const { action } = parsed.data;
 
     if (action === "check_update") {
       try {
@@ -95,9 +105,8 @@ export async function POST(req: Request) {
           hasUpdates,
           statusMessage: hasUpdates ? "Nova versão disponível no repositório remoto!" : "O ICEWALL está atualizado.",
         });
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Falha ao verificar atualizações";
-        return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+      } catch (err) {
+        return errorResponse(err, "admin/system/check_update");
       }
     }
 
@@ -126,15 +135,13 @@ export async function POST(req: Request) {
           message: "Atualização aplicada com sucesso! O sistema está sendo reiniciado.",
           details: `${pullOut}\n${buildOut}`,
         });
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Erro na aplicação do update";
-        return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+      } catch (err) {
+        return errorResponse(err, "admin/system/apply_update");
       }
     }
 
     return NextResponse.json({ ok: false, error: "Ação não suportada" }, { status: 400 });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Erro interno";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  } catch (err) {
+    return errorResponse(err, "admin/system/post");
   }
 }

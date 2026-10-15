@@ -15,7 +15,7 @@ import { validationError } from "@/server/api";
  */
 
 const bodySchema = z.object({
-  command: z.string().min(1),
+  command: z.string().min(1).max(5000),
   serverId: z.number().int().positive().optional(),
 });
 
