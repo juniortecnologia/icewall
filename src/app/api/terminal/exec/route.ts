@@ -5,6 +5,7 @@ import { getDb } from "@/server/db/client";
 import { servers } from "@/server/db/schema";
 import { execOnServer } from "@/server/executor";
 import { getSession } from "@/server/auth/session";
+import { authError, validationError, errorResponse } from "@/server/api";
 
 /**
  * Terminal multi-servidor (Etapa 04): o alvo é SEMPRE um servidor do registro
@@ -26,12 +27,12 @@ export async function POST(req: Request) {
   try {
     const session = await getSession();
     if (!session) {
-      return NextResponse.json({ ok: false, error: "Não autorizado" }, { status: 401 });
+      return authError();
     }
 
     const parsed = body.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
-      return NextResponse.json({ ok: false, error: "Comando ausente ou payload inválido" }, { status: 400 });
+      return validationError("Comando ausente ou payload inválido");
     }
     const { command, serverId } = parsed.data;
 
@@ -63,8 +64,7 @@ export async function POST(req: Request) {
       exitCode: res.code,
       server: { id: row.id, nome: row.nome, tipo: row.tipo, host: row.tipo === "ssh" ? row.host : "localhost", usuario: row.usuario },
     });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Erro interno no servidor";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  } catch (err) {
+    return errorResponse(err, "terminal/exec");
   }
 }

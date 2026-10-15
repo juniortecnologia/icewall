@@ -6,6 +6,7 @@ import { ensureInitialTenantAndAdmin } from "@/server/auth/init";
 import { verifyPassword } from "@/server/auth/crypto";
 import { signSession } from "@/server/auth/jwt";
 import { SESSION_COOKIE_NAME } from "@/server/auth/session";
+import { validationError, authError, errorResponse } from "@/server/api";
 
 export async function POST(req: Request) {
   try {
@@ -14,14 +15,14 @@ export async function POST(req: Request) {
     const { email, password } = body;
 
     if (!email || !password) {
-      return NextResponse.json({ ok: false, error: "Email e senha são obrigatórios" }, { status: 400 });
+      return validationError("Email e senha são obrigatórios");
     }
 
     const db = getDb();
     const user = db.select().from(saasUsers).where(eq(saasUsers.email, email.trim())).get();
 
     if (!user || !verifyPassword(password, user.passwordHash)) {
-      return NextResponse.json({ ok: false, error: "Credenciais inválidas" }, { status: 401 });
+      return authError("Credenciais inválidas");
     }
 
     // Se o usuário tem 2FA ativado, cria sessão temporária com twoFactorPassed = false
@@ -55,8 +56,7 @@ export async function POST(req: Request) {
     });
 
     return res;
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Erro interno no servidor";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  } catch (err) {
+    return errorResponse(err, "auth/login");
   }
 }
