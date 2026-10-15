@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { json, validationError } from "@/server/api";
 import { isActionId, runAction } from "@/server/actions/allowlist";
-import { actionLog } from "@/server/queries";
+import { actionLog as getActionLog } from "@/server/queries";
 import { withAuth } from "@/server/auth/withAuth";
 
 export function GET() {
-  return json(actionLog);
+  return json(() => getActionLog());
 }
 
 const bodySchema = z.object({
