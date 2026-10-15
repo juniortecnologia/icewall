@@ -8,11 +8,24 @@ vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>();
   return { ...actual, connection: vi.fn().mockResolvedValue(undefined) };
 });
-vi.mock("@/server/auth/session", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/server/auth/session")>();
+
+// Mock cookies() from next/headers to return session cookie
+vi.mock("next/headers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/headers")>();
   return {
     ...actual,
-    getSession: vi.fn().mockResolvedValue({ userId: "teste", tenantId: "tenant_teste" }),
+    cookies: vi.fn().mockReturnValue({
+      get: vi.fn().mockReturnValue({ value: "mock-session-token" }),
+    }),
+  };
+});
+
+// Mock verifySession to return a valid session
+vi.mock("@/server/auth/jwt", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/auth/jwt")>();
+  return {
+    ...actual,
+    verifySession: vi.fn().mockResolvedValue({ userId: "teste", tenantId: "tenant_teste", twoFactorPassed: true, role: "admin", email: "test@test.com", name: "Test" }),
   };
 });
 
@@ -26,7 +39,7 @@ import { POST } from "./route";
 function execReq(payload: unknown): Request {
   return new Request("http://localhost/api/terminal/exec", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-icewall": "1" },
     body: JSON.stringify(payload),
   });
 }
