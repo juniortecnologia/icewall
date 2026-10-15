@@ -25,7 +25,7 @@ function crivoV4(): Database.Database {
 
 function icewall(): Database.Database {
   const db = new Database(":memory:");
-  migrate(drizzle(db), { migrationsFolder: path.join(__dirname, "..", "drizzle") });
+  migrate(drizzle(db), { migrationsFolder: path.join(__dirname, "..", "..", "..", "drizzle") });
   return db;
 }
 

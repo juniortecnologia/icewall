@@ -4,7 +4,7 @@
  * Execução: npx tsx testers/ssh-driver.test.ts
  */
 
-import { SshDriver } from "../src/lib/servers/driver-ssh-base";
+import { SshDriver } from "@/lib/servers/driver-ssh-base";
 
 const cfg = {
   host: process.env.SSH_TEST_HOST ?? "localhost",
