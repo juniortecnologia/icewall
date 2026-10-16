@@ -140,13 +140,13 @@ function ServerCard({ entry }: { entry: ServerEntry }) {
       <div className="mt-4 border-t border-line-soft pt-3">
         <div className="mb-2 flex items-center justify-between text-[12px] font-semibold text-ink-3">
           <span className="flex items-center gap-1.5">
-            <Box size={13} aria-hidden /> Containers ({running}/{d?.containers.length ?? 0} ativos)
+            <Box size={13} aria-hidden /> Containers ({running}/{d?.containers?.length ?? 0} ativos)
             {entry.docker && <span className="font-normal">· {ago(entry.docker.ts)}</span>}
           </span>
         </div>
         {entry.docker?.error && <ErrorNote>{entry.docker.error}</ErrorNote>}
         {!entry.docker?.error &&
-          (d?.containers.length ? (
+          (d?.containers?.length ? (
             <Table head={["Nome", "Estado", ""]} dense>
               {d.containers.map((c) => (
                 <tr key={c.id}>
