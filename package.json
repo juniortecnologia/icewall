@@ -3,9 +3,9 @@
   "version": "1.4.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -H 127.0.0.1 -p 4310",
+    "dev": "next dev -H 127.0.0.1 -p 4320",
     "build": "next build",
-    "start": "next start -H 127.0.0.1 -p 4310",
+    "start": "next start -H 127.0.0.1 -p 4320",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
