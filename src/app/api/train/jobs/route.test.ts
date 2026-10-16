@@ -36,6 +36,16 @@ vi.mock("@/server/auth/jwt", async (importOriginal) => {
   };
 });
 
+// Runner sem rede nem flock: execOnServer sob controle e lock desativado.
+process.env.ICEWALL_TRAIN_LOCK_DISABLE = "1";
+vi.mock("@/server/executor", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/executor")>();
+  return { ...actual, driverFor: vi.fn(), execOnServer: vi.fn() };
+});
+
+import { driverFor, execOnServer } from "@/server/executor";
+import type { ServerDriver } from "@/lib/servers/server-driver";
+import type { ExecResult } from "@/lib/servers/server-driver";
 import { servers, trainDatasets, trainJobs } from "@/server/db/schema";
 import { processTrainQueue, recoverStaleTrain } from "@/server/train/runner";
 import { GET as listGet, POST } from "./route";
@@ -48,6 +58,26 @@ import type { SafeTrainJob } from "./schemas";
  * ICEWALL_DB para ":memory:" — banco em memória já migrado, com o seed de
  * Station + Spark.
  */
+
+const driverForMock = vi.mocked(driverFor);
+const execMock = vi.mocked(execOnServer);
+
+const driverFalso = {
+  mkdir: vi.fn(async () => undefined),
+  put: vi.fn(async () => undefined),
+  close: vi.fn(),
+} as unknown as ServerDriver & { put: ReturnType<typeof vi.fn>; mkdir: ReturnType<typeof vi.fn> };
+
+/** Respostas por tipo de comando: home, lançamento (nohup) e poll (kill -0). */
+function mockarExecutor(poll: string | null = null): void {
+  driverForMock.mockReturnValue(driverFalso);
+  execMock.mockImplementation(async (_serverId: number, cmd: string): Promise<ExecResult> => {
+    if (cmd.startsWith("echo $HOME")) return { code: 0, stdout: "/home/facini\n", stderr: "", ms: 1 };
+    if (cmd.includes("nohup sh")) return { code: 0, stdout: "12345\n", stderr: "", ms: 1 };
+    if (cmd.includes("kill -0")) return { code: 0, stdout: poll ?? "", stderr: "", ms: 1 };
+    return { code: 0, stdout: "", stderr: "", ms: 1 };
+  });
+}
 
 function req(method: string, url: string, body?: unknown, headers: Record<string, string> = {}): Request {
   return new Request(url, {
@@ -258,23 +288,155 @@ describe("POST /api/train/jobs/:id/stop", () => {
   });
 });
 
-describe("fila de treinos (runner)", () => {
-  it("processTrainQueue marca o job como falho com mensagem clara até o runner real (T2)", async () => {
-    // O runner processa o job de MENOR id na fila: limpa enfileirados de
-    // testes anteriores para que o alvo deste teste seja processado.
+describe("fila de treinos (runner real, executor mockado)", () => {
+  const PARAMS = {
+    learningRate: 2e-4,
+    epochs: 3,
+    r: 16,
+    alpha: 16,
+    dropout: 0,
+    batchSize: 2,
+    gradientAccumulationSteps: 4,
+    maxSeqLength: 512,
+    bf16: true,
+  };
+
+  const POLL_DONE = [
+    "@@status@@",
+    "exit=0",
+    "@@alive@@",
+    "no",
+    "@@gpu@@",
+    "1024",
+    "@@log@@",
+    '@@ICW {"type":"start","total_steps":12,"total_epochs":3.0}@@',
+    '@@ICW {"type":"step","step":12,"loss":1.23,"lr":0.0001,"epoch":3.0}@@',
+    '@@ICW {"type":"done","train_loss":1.4123}@@',
+    '@@ICW {"type":"saved","adapter":"/workspace/out/adapter"}@@',
+  ].join("\n");
+
+  it("inicia job enfileirado: workspace, upload do script, nohup e status running", async () => {
     getDb().update(trainJobs).set({ status: "cancelled" }).where(eq(trainJobs.status, "queued")).run();
     const sid = await sparkId();
     const id = getDb()
       .insert(trainJobs)
-      .values({ serverId: sid, baseModel: "m", method: "lora", datasetPath: "/x.jsonl", status: "queued" })
+      .values({
+        serverId: sid,
+        baseModel: "HuggingFaceTB/SmolLM2-135M",
+        method: "lora",
+        datasetPath: "/home/facini/icewall/datasets/ds.jsonl",
+        status: "queued",
+        paramsJson: PARAMS,
+      })
       .returning()
       .get()!.id;
 
+    mockarExecutor();
+    await processTrainQueue();
+
+    const row = getDb().select().from(trainJobs).where(eq(trainJobs.id, id)).get()!;
+    expect(row.status).toBe("running");
+    expect(row.workspacePath).toBe(`/tmp/icewall-train-${id}`);
+    expect(row.remotePid).toBe(12345);
+    expect(driverFalso.mkdir).toHaveBeenCalledWith(`/tmp/icewall-train-${id}`, "755");
+    expect(driverFalso.put).toHaveBeenCalledTimes(2); // fine_tune.py + run.sh
+    const remotos = driverFalso.put.mock.calls.map((c) => String(c[1]));
+    expect(remotos.some((r) => r.endsWith("fine_tune.py"))).toBe(true);
+    expect(remotos.some((r) => r.endsWith("run.sh"))).toBe(true);
+  });
+
+  it("poll com exit=0: finaliza done, guarda loss final e histórico", async () => {
+    // Drena running de testes anteriores: o runner processa um job por tick.
+    getDb().update(trainJobs).set({ status: "cancelled", workspacePath: null }).where(eq(trainJobs.status, "running")).run();
+    const sid = await sparkId();
+    const id = getDb()
+      .insert(trainJobs)
+      .values({
+        serverId: sid,
+        baseModel: "m",
+        method: "lora",
+        datasetPath: "/home/facini/icewall/datasets/ds.jsonl",
+        status: "running",
+        workspacePath: `/tmp/icewall-train-${sid}-done`,
+        remotePid: 99,
+        totalEpochs: 3,
+        paramsJson: PARAMS,
+      })
+      .returning()
+      .get()!.id;
+
+    mockarExecutor(POLL_DONE);
+    await processTrainQueue();
+
+    const row = getDb().select().from(trainJobs).where(eq(trainJobs.id, id)).get()!;
+    expect(row.status).toBe("done");
+    expect(row.progressPct).toBe(100);
+    expect(row.valLoss).toBe(1.4123);
+    expect(row.lossHistory).toContainEqual({ step: 12, value: 1.23 });
+    expect(row.current).toBe("concluído");
+  });
+
+  it("poll com exit!=0 e marcador de erro: failed com a mensagem clara", async () => {
+    getDb().update(trainJobs).set({ status: "cancelled", workspacePath: null }).where(eq(trainJobs.status, "running")).run();
+    const sid = await sparkId();
+    const id = getDb()
+      .insert(trainJobs)
+      .values({
+        serverId: sid,
+        baseModel: "m",
+        method: "qlora",
+        datasetPath: "/home/facini/icewall/datasets/ds.jsonl",
+        status: "running",
+        workspacePath: `/tmp/icewall-train-${sid}-fail`,
+        remotePid: 98,
+        totalEpochs: 1,
+        paramsJson: PARAMS,
+      })
+      .returning()
+      .get()!.id;
+    const poll = [
+      "@@status@@",
+      "exit=1",
+      "@@alive@@",
+      "no",
+      "@@gpu@@",
+      "0",
+      "@@log@@",
+      '@@ICW {"type":"error","message":"OOM no carregamento do modelo"}@@',
+    ].join("\n");
+
+    mockarExecutor(poll);
     await processTrainQueue();
 
     const row = getDb().select().from(trainJobs).where(eq(trainJobs.id, id)).get()!;
     expect(row.status).toBe("failed");
-    expect(row.error).toContain("T2");
+    expect(row.error).toBe("OOM no carregamento do modelo");
+  });
+
+  it("cancelamento: job cancelado com workspace tem o container remoto removido", async () => {
+    const sid = await sparkId();
+    const id = getDb()
+      .insert(trainJobs)
+      .values({
+        serverId: sid,
+        baseModel: "m",
+        method: "lora",
+        datasetPath: "/x.jsonl",
+        status: "cancelled",
+        workspacePath: `/tmp/icewall-train-${sid}-canc`,
+        remotePid: 97,
+      })
+      .returning()
+      .get()!.id;
+
+    mockarExecutor();
+    await processTrainQueue();
+
+    const row = getDb().select().from(trainJobs).where(eq(trainJobs.id, id)).get()!;
+    expect(row.status).toBe("cancelled");
+    expect(row.workspacePath).toBeNull(); // limpo: não reprocessa
+    const chamouDockerRm = execMock.mock.calls.some((c) => String(c[1]).includes(`rm -f 'icewall-train-${id}'`));
+    expect(chamouDockerRm).toBe(true);
   });
 
   it("recoverStaleTrain marca running como falho (painel reiniciado)", async () => {

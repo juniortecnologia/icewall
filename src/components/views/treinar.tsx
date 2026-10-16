@@ -1,12 +1,13 @@
 "use client";
-import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getJson, send, sendForm, useLive } from "@/lib/api";
 import { bytes, dateTime, num } from "@/lib/format";
-import { Button, Code, Empty, ErrorNote, Kv, Loading, PageHeader, Panel, Segmented, Table } from "../ui";
+import { Button, Code, Empty, ErrorNote, Kv, Loading, Meter, PageHeader, Panel, Segmented, Status, Table } from "../ui";
 import type { SafeServer } from "@/app/api/train/servers/schemas";
 import type { SafeTrainDataset } from "@/app/api/train/datasets/schemas";
+import type { SafeTrainJob } from "@/app/api/train/jobs/schemas";
 
 interface UploadOk {
   ok: true;
@@ -21,11 +22,17 @@ interface PreviewDataset {
   amostras: unknown[];
 }
 
+interface LogPayload {
+  job: SafeTrainJob;
+  log: string;
+  marcadores?: unknown[];
+}
+
+const PARAMS_DEFAULT = { learningRate: 0.0002, epochs: 3, r: 16, alpha: 16, dropout: 0, batchSize: 2, gradientAccumulationSteps: 4, maxSeqLength: 2048 };
+
 /**
- * Aba Treinar (Fase 2). Etapa T1 entrega a seção de Datasets: seleção de
- * servidor (registro `servers`), upload com conversão/validação e preview
- * das amostras. O stepper de treino (servidor → modelo → dataset → config →
- * executar) entra na T2 sobre esta mesma página.
+ * Aba Treinar (Fase 2). T1: datasets (upload/conversão/preview). T2: treinos
+ * (stepper → fila com loss ao vivo, logs SSE e stop). Ambientes lab|produção.
  */
 export function TrainView() {
   const qc = useQueryClient();
@@ -39,8 +46,12 @@ export function TrainView() {
     atual ? `/api/train/datasets?serverId=${atual}` : "/api/train/datasets",
     5000,
   );
+  const jobs = useLive<{ ok: boolean; jobs: SafeTrainJob[] }>(
+    atual ? `/api/train/jobs?serverId=${atual}` : "/api/train/jobs",
+    5000,
+  );
 
-  // ── upload ───────────────────────────────────────────────────────────────
+  // ── datasets: upload / preview / remoção ────────────────────────────────
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [formatoTreino, setFormatoTreino] = useState<"chat" | "text">("chat");
@@ -48,6 +59,10 @@ export function TrainView() {
   const [erro, setErro] = useState<string | null>(null);
   const [resultado, setResultado] = useState<UploadOk | null>(null);
   const [arrastando, setArrastando] = useState(false);
+
+  const [preview, setPreview] = useState<PreviewDataset | null>(null);
+  const [previewErro, setPreviewErro] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   async function enviar() {
     if (!file || !atual) return;
@@ -71,11 +86,6 @@ export function TrainView() {
     }
   }
 
-  // ── preview / remoção ───────────────────────────────────────────────────
-  const [preview, setPreview] = useState<PreviewDataset | null>(null);
-  const [previewErro, setPreviewErro] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-
   async function abrirPreview(d: SafeTrainDataset) {
     setPreviewLoading(true);
     setPreviewErro(null);
@@ -89,7 +99,7 @@ export function TrainView() {
     }
   }
 
-  async function excluir(d: SafeTrainDataset) {
+  async function excluirDataset(d: SafeTrainDataset) {
     if (!window.confirm(`Remover o dataset "${d.nome}"? O arquivo remoto também é apagado.`)) return;
     setErro(null);
     try {
@@ -100,6 +110,78 @@ export function TrainView() {
       setErro(String((e as Error).message));
     }
   }
+
+  // ── treinos: novo job / lista / detalhe ao vivo ─────────────────────────
+  const [modelo, setModelo] = useState("");
+  const [datasetId, setDatasetId] = useState<number | null>(null);
+  const [metodo, setMetodo] = useState<"lora" | "qlora" | "full">("lora");
+  const [ambiente, setAmbiente] = useState<"lab" | "producao">("lab");
+  const [params, setParams] = useState(PARAMS_DEFAULT);
+  const [criando, setCriando] = useState(false);
+  const [erroJob, setErroJob] = useState<string | null>(null);
+  const [jobSelecionado, setJobSelecionado] = useState<number | null>(null);
+  const [aoVivoEstado, setAoVivoEstado] = useState<LogPayload | null>(null);
+  /** Derivado: sem job selecionado, nada de payload antigo vazando no painel. */
+  const aoVivo = jobSelecionado !== null ? aoVivoEstado : null;
+
+  const selecionarJob = (id: number | null) => {
+    setJobSelecionado(id);
+    setAoVivoEstado(null);
+  };
+
+  // SSE: logs + job ao vivo; fecha no terminal ou quando troca de job.
+  useEffect(() => {
+    if (jobSelecionado === null) return;
+    const es = new EventSource(`/api/train/jobs/${jobSelecionado}/logs`);
+    es.onmessage = (ev) => {
+      try {
+        const dados = JSON.parse(ev.data) as LogPayload;
+        setAoVivoEstado(dados);
+        if (["done", "failed", "cancelled"].includes(dados.job.status)) es.close();
+      } catch {
+        // payload parcial: ignora
+      }
+    };
+    es.onerror = () => es.close();
+    return () => es.close();
+  }, [jobSelecionado]);
+
+  async function criarJob() {
+    if (!atual || !datasetId) return;
+    setCriando(true);
+    setErroJob(null);
+    try {
+      await send("/api/train/jobs", "POST", {
+        serverId: atual,
+        baseModel: modelo.trim(),
+        method: metodo,
+        datasetId,
+        ambiente,
+        params,
+      });
+      setModelo("");
+      void qc.invalidateQueries();
+    } catch (e) {
+      setErroJob(String((e as Error).message));
+    } finally {
+      setCriando(false);
+    }
+  }
+
+  async function pararJob(j: SafeTrainJob) {
+    if (!window.confirm(`Cancelar o treino #${j.id} (${j.baseModel})?`)) return;
+    try {
+      await send(`/api/train/jobs/${j.id}/stop`, "POST");
+      void qc.invalidateQueries();
+    } catch (e) {
+      setErroJob(String((e as Error).message));
+    }
+  }
+
+  const jobsDoServidor = jobs.data?.jobs ?? [];
+  const jobAtivo = aoVivo?.job ?? jobsDoServidor.find((j) => j.id === jobSelecionado) ?? null;
+  const statusLevel = (s: string): "good" | "info" | "critical" | "warning" =>
+    s === "done" ? "good" : s === "failed" ? "critical" : s === "cancelled" ? "warning" : "info";
 
   return (
     <div className="space-y-4 p-4 md:p-6">
@@ -116,6 +198,7 @@ export function TrainView() {
             onChange={(v) => {
               setServerId(Number(v));
               setPreview(null);
+              selecionarJob(null);
             }}
             options={servers.data.servers.map((s) => ({ value: String(s.id), label: `${s.nome} (${s.tipo})` }))}
           />
@@ -124,8 +207,209 @@ export function TrainView() {
         )}
       </Panel>
 
-      {/* Upload */}
-      <Panel title="Novo dataset">
+      {/* Novo treino */}
+      <Panel title="Novo treino">
+        {!atual ? (
+          <Empty>Selecione um servidor acima.</Empty>
+        ) : (
+          <div className="space-y-3">
+            <fieldset>
+              <legend className="mb-1.5 text-[12px] text-ink-3">Modelo base (HF hub ou tag local)</legend>
+              <input
+                value={modelo}
+                onChange={(e) => setModelo(e.target.value)}
+                placeholder="ex.: HuggingFaceTB/SmolLM2-135M"
+                className="w-full rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[13px] text-ink placeholder:text-ink-3 focus:border-ice/50 focus:outline-none"
+              />
+            </fieldset>
+
+            <fieldset>
+              <legend className="mb-1.5 text-[12px] text-ink-3">Dataset</legend>
+              {datasets.data?.datasets.length ? (
+                <select
+                  value={datasetId ?? ""}
+                  onChange={(e) => setDatasetId(Number(e.target.value))}
+                  className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-ink focus:border-ice/50 focus:outline-none"
+                >
+                  <option value="">— escolha —</option>
+                  {datasets.data.datasets.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.nome} ({num(d.samples)} amostras · {d.formatoTreino})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Empty>Nenhum dataset neste servidor — envie um abaixo.</Empty>
+              )}
+            </fieldset>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Segmented
+                label="Método"
+                value={metodo}
+                onChange={setMetodo}
+                options={[
+                  { value: "lora", label: "LoRA" },
+                  { value: "qlora", label: "QLoRA (4-bit)" },
+                  { value: "full", label: "Completo" },
+                ]}
+              />
+              <Segmented
+                label="Ambiente"
+                value={ambiente}
+                onChange={setAmbiente}
+                options={[
+                  { value: "lab", label: "Lab" },
+                  { value: "producao", label: "Produção" },
+                ]}
+              />
+            </div>
+
+            <details className="rounded-lg border border-line-soft px-3 py-2">
+              <summary className="cursor-pointer text-[12px] text-ink-3 hover:text-ink">Hiperparâmetros (presets do Unsloth)</summary>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] sm:grid-cols-4">
+                {(
+                  [
+                    ["learningRate", "LR"],
+                    ["epochs", "Épocas"],
+                    ["r", "Rank (r)"],
+                    ["alpha", "Alpha"],
+                    ["dropout", "Dropout"],
+                    ["batchSize", "Batch"],
+                    ["gradientAccumulationSteps", "Grad. acum."],
+                    ["maxSeqLength", "Seq. máx."],
+                  ] as const
+                ).map(([campo, rotulo]) => (
+                  <label key={campo} className="space-y-0.5">
+                    <span className="block text-ink-3">{rotulo}</span>
+                    <input
+                      type="number"
+                      step="any"
+                      value={params[campo]}
+                      onChange={(e) => setParams((p) => ({ ...p, [campo]: Number(e.target.value) }))}
+                      className="w-full rounded-md border border-line bg-surface px-2 py-1 font-mono text-ink focus:border-ice/50 focus:outline-none"
+                    />
+                  </label>
+                ))}
+              </div>
+            </details>
+
+            <div className="flex items-center gap-2">
+              <Button tone="primary" disabled={!modelo.trim() || !datasetId || criando} onClick={criarJob}>
+                {criando ? "Enfileirando…" : "Enfileirar treino"}
+              </Button>
+              {modelo && (
+                <Button
+                  onClick={() => {
+                    setModelo("");
+                    setDatasetId(null);
+                    setErroJob(null);
+                  }}
+                >
+                  Limpar
+                </Button>
+              )}
+            </div>
+            {erroJob && <ErrorNote>{erroJob}</ErrorNote>}
+          </div>
+        )}
+      </Panel>
+
+      {/* Treinos (fila) */}
+      <Panel title="Treinos">
+        {jobs.isLoading ? (
+          <Loading />
+        ) : jobsDoServidor.length ? (
+          <Table head={["#", "Modelo", "Dataset", "Método", "Ambiente", "Status", "Progresso", ""]}>
+            {jobsDoServidor.map((j) => (
+              <tr key={j.id} className={`cursor-pointer border-t border-line-soft/60 hover:bg-surface-2/40 ${jobSelecionado === j.id ? "bg-surface-2/60" : ""}`} onClick={() => selecionarJob(j.id)}>
+                <td className="py-1.5 font-mono text-ink-2">#{j.id}</td>
+                <td className="py-1.5 font-medium text-ink">{j.baseModel}</td>
+                <td className="py-1.5 text-ink-2">{j.datasetPath?.split("/").pop() ?? "—"}</td>
+                <td className="py-1.5 text-ink-2">{j.method}</td>
+                <td className="py-1.5 text-ink-2">{j.ambiente}</td>
+                <td className="py-1.5">
+                  <Status level={statusLevel(j.status)} label={j.status} />
+                </td>
+                <td className="w-28 py-1.5">
+                  <Meter value={j.progressPct / 100} label={`${j.progressPct}%`} />
+                </td>
+                <td className="py-1.5 text-right">
+                  {(j.status === "queued" || j.status === "running") && (
+                    <Button
+                      tone="danger"
+                      onClick={() => {
+                        selecionarJob(j.id);
+                        void pararJob(j);
+                      }}
+                    >
+                      Parar
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </Table>
+        ) : (
+          <Empty>Nenhum treino neste servidor ainda.</Empty>
+        )}
+
+        {/* Detalhe ao vivo */}
+        {jobAtivo && (
+          <div className="mt-4 space-y-3 rounded-xl border border-line bg-surface-2/40 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-semibold text-ink">
+                Treino #{jobAtivo.id} · {jobAtivo.baseModel}
+              </span>
+              <Status level={statusLevel(jobAtivo.status)} label={jobAtivo.status} />
+            </div>
+            <Meter value={jobAtivo.progressPct / 100} label={`${jobAtivo.progressPct}%`} />
+            <Kv
+              items={[
+                ["Método / ambiente", `${jobAtivo.method} · ${jobAtivo.ambiente}`],
+                ["Dataset", jobAtivo.datasetPath?.split("/").pop() ?? "—"],
+                ["Épocas", `${jobAtivo.epochsDone}/${jobAtivo.totalEpochs}`],
+                ["Etapa", jobAtivo.current ?? "—"],
+                ["GPU (compute apps)", jobAtivo.gpuMemUsedMib != null ? `${num(jobAtivo.gpuMemUsedMib)} MiB` : "—"],
+                ["Loss final", jobAtivo.valLoss != null ? String(jobAtivo.valLoss) : "—"],
+                ["Iniciado", jobAtivo.startedAt ? dateTime(jobAtivo.startedAt) : "—"],
+                ["Erro", jobAtivo.error ?? "—"],
+              ]}
+            />
+
+            {jobAtivo.lossHistory && jobAtivo.lossHistory.length > 1 && (
+              <div style={{ height: 160 }} aria-label="Curva de loss" role="img">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={jobAtivo.lossHistory} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
+                    <CartesianGrid stroke="var(--line-soft)" vertical={false} />
+                    <XAxis dataKey="step" stroke="var(--ink-3)" fontSize={11} tickLine={false} axisLine={false} minTickGap={24} />
+                    <YAxis width={46} domain={["auto", "auto"]} stroke="var(--ink-3)" fontSize={11} tickLine={false} axisLine={false} />
+                    <Tooltip
+                      content={({ active, payload }) =>
+                        active && payload?.length ? (
+                          <div className="rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[12px] shadow-lg">
+                            step {payload[0].payload.step} · loss {Number(payload[0].payload.value).toFixed(4)}
+                          </div>
+                        ) : null
+                      }
+                    />
+                    <Line type="monotone" dataKey="value" stroke="var(--ice)" strokeWidth={1.6} dot={false} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {aoVivo?.log ? (
+              <Code>{aoVivo.log.split("\n").slice(-14).join("\n") || "(sem linhas ainda)"}</Code>
+            ) : (
+              jobSelecionado !== null && <Loading label="Lendo train.log" />
+            )}
+          </div>
+        )}
+      </Panel>
+
+      {/* Datasets */}
+      <Panel title="Datasets">
         <div className="space-y-3">
           <div
             role="button"
@@ -152,13 +436,12 @@ export function TrainView() {
               arrastando ? "border-ice/60 bg-ice/10" : "border-line bg-surface-2/40 hover:bg-surface-2"
             }`}
           >
-            <Upload size={18} className="text-ink-3" aria-hidden />
             {file ? (
               <span className="text-[13px] text-ink">
                 {file.name} <span className="text-ink-3">({bytes(file.size)})</span>
               </span>
             ) : (
-              <span className="text-[13px] text-ink-2">Arraste o arquivo aqui ou clique para escolher (.jsonl, .json, .csv, .txt — máx. 50 MB)</span>
+              <span className="text-[13px] text-ink-2">Arraste o dataset aqui ou clique (.jsonl, .json, .csv, .txt — máx. 50 MB)</span>
             )}
             <input
               ref={inputRef}
@@ -216,53 +499,50 @@ export function TrainView() {
               ]}
             />
           )}
-        </div>
-      </Panel>
 
-      {/* Lista de datasets do servidor */}
-      <Panel title={`Datasets${atual ? "" : " (sem servidor selecionado)"}`}>
-        {datasets.isLoading ? (
-          <Loading />
-        ) : datasets.data?.datasets.length ? (
-          <Table head={["Dataset", "Origem", "Treino", "Amostras", "Tamanho", "Enviado", ""]}>
-            {datasets.data.datasets.map((d) => (
-              <tr key={d.id} className="border-t border-line-soft/60">
-                <td className="py-1.5 font-medium text-ink">{d.nome}</td>
-                <td className="py-1.5 text-ink-2">{d.formato}</td>
-                <td className="py-1.5 text-ink-2">{d.formatoTreino}</td>
-                <td className="py-1.5 text-ink-2">{num(d.samples)}</td>
-                <td className="py-1.5 text-ink-2">{bytes(d.sizeBytes)}</td>
-                <td className="py-1.5 text-ink-3">{dateTime(d.atualizadoEm)}</td>
-                <td className="py-1.5 text-right">
-                  <span className="inline-flex gap-1.5">
-                    <Button onClick={() => abrirPreview(d)}>Amostras</Button>
-                    <Button tone="danger" onClick={() => excluir(d)}>
-                      Remover
-                    </Button>
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </Table>
-        ) : (
-          <Empty>Nenhum dataset neste servidor ainda — envie o primeiro acima.</Empty>
-        )}
-        {previewLoading && <Loading label="Lendo amostras" />}
-        {previewErro && <ErrorNote>{previewErro}</ErrorNote>}
-        {preview && (
-          <div className="mt-3 space-y-2">
-            <Kv
-              items={[
-                ["Dataset", preview.nome],
-                ["Arquivo", <Code key="p">{preview.remotePath}</Code>],
-                ["Amostras no dataset", num(preview.samples)],
-              ]}
-            />
-            {preview.amostras.map((a, i) => (
-              <Code key={i}>{JSON.stringify(a, null, 2)}</Code>
-            ))}
-          </div>
-        )}
+          {datasets.isLoading ? (
+            <Loading />
+          ) : datasets.data?.datasets.length ? (
+            <Table head={["Dataset", "Origem", "Treino", "Amostras", "Tamanho", "Enviado", ""]}>
+              {datasets.data.datasets.map((d) => (
+                <tr key={d.id} className="border-t border-line-soft/60">
+                  <td className="py-1.5 font-medium text-ink">{d.nome}</td>
+                  <td className="py-1.5 text-ink-2">{d.formato}</td>
+                  <td className="py-1.5 text-ink-2">{d.formatoTreino}</td>
+                  <td className="py-1.5 text-ink-2">{num(d.samples)}</td>
+                  <td className="py-1.5 text-ink-2">{bytes(d.sizeBytes)}</td>
+                  <td className="py-1.5 text-ink-3">{dateTime(d.atualizadoEm)}</td>
+                  <td className="py-1.5 text-right">
+                    <span className="inline-flex gap-1.5">
+                      <Button onClick={() => abrirPreview(d)}>Amostras</Button>
+                      <Button tone="danger" onClick={() => excluirDataset(d)}>
+                        Remover
+                      </Button>
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </Table>
+          ) : (
+            <Empty>Nenhum dataset neste servidor ainda — envie o primeiro acima.</Empty>
+          )}
+          {previewLoading && <Loading label="Lendo amostras" />}
+          {previewErro && <ErrorNote>{previewErro}</ErrorNote>}
+          {preview && (
+            <div className="mt-2 space-y-2">
+              <Kv
+                items={[
+                  ["Dataset", preview.nome],
+                  ["Arquivo", <Code key="p">{preview.remotePath}</Code>],
+                  ["Amostras no dataset", num(preview.samples)],
+                ]}
+              />
+              {preview.amostras.map((a, i) => (
+                <Code key={i}>{JSON.stringify(a, null, 2)}</Code>
+              ))}
+            </div>
+          )}
+        </div>
       </Panel>
     </div>
   );

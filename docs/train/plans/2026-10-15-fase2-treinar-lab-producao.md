@@ -1,7 +1,7 @@
 # Fase 2 — Aba `/treinar`: treino, quantização e fine-tuning (Lab → Produção)
 
 **Data:** 2026-10-15
-**Status:** em execução (T0 e T1 concluídas)
+**Status:** em execução (T0, T1 e T2 concluídas)
 **Substitui/absorve:** `docs/train/plans/02..05` (convenções desatualizadas) e detalha a Fase 2 de `docs/plano-multi-servidor-treino-vllm.md`
 
 ---
@@ -74,12 +74,14 @@ Fluxo em stepper (5 passos já previstos nos docs + 6º de export/promoção):
 - Correção herdada do legado descoberta pelos testes: `shellArg` recusa caminhos absolutos — criado `shellPath` em `spark/ssh.ts` para caminhos.
 - ✅ **Validação:** 383/383 testes (32 arquivos), typecheck limpo, lint sem erros novos.
 
-### T2 — Runner real + monitoramento (núcleo MVP)
-- **Antes de codar:** mini-run manual no Spark para validar imagem/args reais (mandato do plano aprovado). O `fine_tune.py` passa a ser **nosso**, versionado em `deploy/train/` e montado no container — sem depender de script inexistente na imagem.
-- Runner: workspace `/tmp/icewall-train-{id}`, nohup + pid (padrão já usado), poll do `train.log` (2–3 s) parseando loss/epoch, GPU mem via `nvidia-smi`, stop = kill pid + docker stop.
-- **Logs ao vivo: SSE** (`GET /api/train/jobs/:id/logs`) com fallback polling `useLive`; gráfico de loss (recharts).
-- UI: stepper de 5 passos, lista de runs, detalhe com gráfico + logs + stop.
-- ✅ **Validação:** treino pequeno real no Spark → loss ao vivo no navegador → stop funciona.
+### T2 — Runner real + monitoramento ✅
+- **Mandato cumprido (mini-run antes de codar):** imagem `unslothai/unsloth` negada no Docker Hub (tag inexistente/auth) — confirmado que a interface do legado era fictícia. **Plano B (risco 1)**: imagem `icewall-train:latest` derivada da vLLM local no Spark (torch 2.14 + transformers 5.16 + peft/datasets/accelerate), build único de ~1 min.
+- **`deploy/train/fine_tune.py` nosso** (não da imagem): LoRA/QLoRA*/full com peft/Trainer, protocolo de marcadores `@@ICW {json}@@` (start/step/done/saved/warning/error) no train.log, adapter salvo em `{out}/adapter`. (*QLoRA exige bitsandbytes — cai para bf16 com aviso; validar na T3.)
+- **Runner real** (`src/server/train/runner.ts`): por tick de 5 s — polla o job running (tail do log + marcadores + GPU via compute-apps + final.status) ou inicia o próximo queued (lock não-bloqueante do delegate-local, workspace `/tmp/icewall-train-{id}`, upload do script via driver, nohup + pid, cache HF persistente `$HOME/icewall/hf-cache`); cancelamento limpa container + pid no servidor.
+- **SSE** (`GET /api/train/jobs/:id/logs`): ReadableStream + text/event-stream, 2,5 s, encerra no terminal/30 min.
+- **UI /treinar**: novo treino (modelo, dataset, método LoRA/QLoRA/full, lab|produção, hiperparâmetros editáveis), fila com progresso, detalhe com curva de loss (recharts), logs ao vivo (EventSource) e stop.
+- **Bugs latentes pegos pelo E2E:** `SshDriver.put/get` usava flags de ssh no scp (`-p`/`-l`) e faltava `user@` no destino (nunca exercitado — o bench usa ssh puro); aspas no destino viram literais no scp/SFTP moderno; `/mnt/data` root-only no Spark → datasets em `$HOME/icewall/datasets`; tqdm cola o marcador sem `\n` → parser com match global; scheduler não recebe hot-reload (reinício a cada mudança — já avisado no README).
+- ✅ **Validação (E2E real no Spark):** mini-run manual OK; job via fila → `done` com loss final 4,38; segundo job com **loss ao vivo acumulando entre polls** (4 pontos: 4,19→4,15); **stop ao vivo** aos 41% → `cancelled`, container removido, campos limpos. 392/392 testes.
 
 ### T3 — Quantização e exports (treinar → quantificar)
 - Caminho 1 (no fim do treino): `save_pretrained_gguf` (q4_k_m/q8_0/f16) via Unsloth.

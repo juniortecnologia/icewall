@@ -49,6 +49,7 @@ vi.mock("@/server/executor", async (importOriginal) => {
 import type { ServerDriver } from "@/lib/servers/server-driver";
 import type { ExecResult } from "@/lib/servers/server-driver";
 import { driverFor, execOnServer } from "@/server/executor";
+import { resetDatasetsHomes } from "@/server/train/datasets";
 import { servers, trainDatasets, trainJobs } from "@/server/db/schema";
 import { DELETE, GET as detailGet } from "./[id]/route";
 import { GET as previewGet } from "./[id]/preview/route";
@@ -70,10 +71,11 @@ const driverFalso = {
   close: vi.fn(),
 } as unknown as ServerDriver & { put: ReturnType<typeof vi.fn> };
 
-const EXEC_OK: ExecResult = { code: 0, stdout: "", stderr: "", ms: 1 };
+const EXEC_OK: ExecResult = { code: 0, stdout: "/home/facini\n", stderr: "", ms: 1 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetDatasetsHomes();
   driverForMock.mockReturnValue(driverFalso);
   execMock.mockResolvedValue(EXEC_OK);
 });
@@ -176,11 +178,11 @@ describe("POST /api/train/datasets (upload multipart)", () => {
     expect(res.status).toBe(201);
     const data = (await res.json()) as { dataset: SafeTrainDataset; validacao: { total: number; duplicados: number; vazios: number } };
     expect(data.dataset.nome).toBe("receitas-de-teste");
-    expect(data.dataset.remotePath).toBe("/mnt/data/datasets/receitas-de-teste.jsonl");
+    expect(data.dataset.remotePath).toBe("/home/facini/icewall/datasets/receitas-de-teste.jsonl");
     expect(data.dataset.formato).toBe("jsonl");
     expect(data.dataset.formatoTreino).toBe("chat");
     expect(data.validacao).toEqual({ total: 2, duplicados: 1, vazios: 1 });
-    expect(driverFalso.mkdir).toHaveBeenCalledWith("/mnt/data/datasets", "755");
+    expect(driverFalso.mkdir).toHaveBeenCalledWith("/home/facini/icewall/datasets", "755");
     expect(driverFalso.put).toHaveBeenCalledTimes(1);
     const row = getDb().select().from(trainDatasets).all().find((d) => d.nome === "receitas-de-teste");
     expect(row?.serverId).toBe(sid);

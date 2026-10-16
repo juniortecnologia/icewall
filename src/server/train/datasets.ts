@@ -14,17 +14,41 @@ import { shellPath } from "../spark/ssh";
  * (formato alvo chat/text) → validação (total, duplicados, vazios) → envio
  * pelo driver do servidor (put) → registro em `train_datasets`.
  *
- * O caminho remoto vive sempre sob `/mnt/data/datasets/{slug}.jsonl`; o nome
- * do dataset é o slug do arquivo original e é único por servidor (índice
- * único). Comandos remotos saem de constantes + `shellPath`/`shellArg` —
- * nunca de texto da interface.
+ * O caminho remoto vive sempre em `$HOME/icewall/datasets/{slug}.jsonl`
+ * (resolvido por servidor); o nome do dataset é o slug do arquivo original e
+ * é único por servidor (índice único). Comandos remotos saem de constantes +
+ * `shellPath`/`shellArg` — nunca de texto da interface.
  */
 
 export const FORMATOS = ["jsonl", "json", "csv", "txt"] as const;
 export type Formato = (typeof FORMATOS)[number];
 
 export const TAMANHO_MAX_BYTES = 50 * 1024 * 1024; // 50 MB por arquivo
-const DIR_REMOTO = "/mnt/data/datasets";
+
+const homesCache = new Map<number, string>();
+
+/**
+ * Diretório de datasets no servidor: `$HOME/icewall/datasets` — resolvido uma
+ * vez por servidor e cacheado. (No Spark, `/mnt` é root-only: o legado
+ * /mnt/data não é utilizável.)
+ */
+export async function datasetsDir(serverId: number): Promise<string> {
+  const emCache = homesCache.get(serverId);
+  if (emCache) return emCache;
+  const res = await execOnServer(serverId, "echo $HOME", 10_000);
+  const home = res.stdout.trim();
+  if (res.code !== 0 || !home.startsWith("/")) {
+    throw new DatasetError("remoto", `não consegui resolver $HOME no servidor: ${res.stderr.trim() || `exit ${res.code}`}`);
+  }
+  const dir = `${home.replace(/\/+$/, "")}/icewall/datasets`;
+  homesCache.set(serverId, dir);
+  return dir;
+}
+
+/** Só para testes: limpa o cache de homes resolvidos. */
+export function resetDatasetsHomes(): void {
+  homesCache.clear();
+}
 
 /** Erro de dataset com código estável — as rotas mapeiam para o status HTTP. */
 export class DatasetError extends Error {
@@ -296,13 +320,15 @@ export async function enviarDataset(entrada: UploadEntrada): Promise<UploadResul
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "icewall-ds-"));
   const tmpLocal = path.join(tmpDir, `${nome}.jsonl`);
-  const remotePath = `${DIR_REMOTO}/${nome}.jsonl`;
+  let remotePath = "";
   let driver: ReturnType<typeof driverFor> | null = null;
   try {
+    const dir = await datasetsDir(entrada.serverId);
+    remotePath = `${dir}/${nome}.jsonl`;
     await fsp.writeFile(tmpLocal, jsonl, "utf8");
     driver = driverFor(entrada.serverId);
     try {
-      await driver.mkdir(DIR_REMOTO, "755");
+      await driver.mkdir(dir, "755");
       await driver.put(tmpLocal, remotePath);
     } catch (err) {
       throw new DatasetError("remoto", `falha ao enviar para o servidor: ${String(err instanceof Error ? err.message : err)}`);

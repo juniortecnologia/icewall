@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { ServerDriver, BaseConfig, ExecResult } from "./server-driver";
 
 /**
@@ -66,24 +68,29 @@ export class SshDriver extends ServerDriver {
     });
   }
 
-  private _scpArgs(action: "put" | "get"): string[] {
+  private _scpArgs(): string[] {
     const port = this.config.port ?? 22;
+    // scp: porta é -P (maiúsculo) e NÃO existe -l — o usuário vai no destino.
     return [
       "-o", "BatchMode=yes",
       "-o", "ConnectTimeout=10",
-      "-p", String(port),
+      "-P", String(port),
       "-i", this.config.keyPath,
-      "-l", this.config.user,
     ];
+  }
+
+  private destino(): string {
+    return this.config.user ? `${this.config.user}@${this.config.host}` : this.config.host;
   }
 
   async put(localPath: string, remotePath: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const child = spawn("scp", [
-        ...this._scpArgs("put"),
-        "-r",
-        escapeArg(localPath),
-        `${this.config.host}:${escapeArg(remotePath)}`,
+        ...this._scpArgs(),
+        localPath,
+        // Caminho remoto CRU: o scp moderno (SFTP) não passa pelo shell remoto,
+        // então aspas viram literais. Nossos caminhos são gerados sem espaços.
+        `${this.destino()}:${remotePath}`,
       ], { stdio: ["pipe", "ignore", "pipe"] });
 
       let stderr = "";
@@ -96,20 +103,13 @@ export class SshDriver extends ServerDriver {
   }
 
   async get(remotePath: string, localPath: string): Promise<void> {
-    // mkdir -p for destination dir
-    await new Promise<void>((resolve, reject) => {
-      const fs = require("node:fs");
-      const path = require("node:path");
-      fs.mkdirSync(path.dirname(localPath), { recursive: true });
-      resolve();
-    });
+    fs.mkdirSync(path.dirname(localPath), { recursive: true });
 
     await new Promise<void>((resolve, reject) => {
       const child = spawn("scp", [
-        ...this._scpArgs("get"),
-        "-r",
-        `${this.config.host}:${escapeArg(remotePath)}`,
-        escapeArg(localPath),
+        ...this._scpArgs(),
+        `${this.destino()}:${remotePath}`,
+        localPath,
       ], { stdio: ["pipe", "ignore", "pipe"] });
 
       let stderr = "";

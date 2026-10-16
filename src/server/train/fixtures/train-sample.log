@@ -1,0 +1,14 @@
+@@ICW {"type":"start","total_steps":12,"total_epochs":3.0}@@
+map(train_dataset) 100%|██████████| 24/24
+  0%|          | 0/12 [00:00<?, ?it/s]
+{"loss": 2.1043, "learning_rate": 0.00018, "epoch": 0.25}
+@@ICW {"type":"step","step":2,"loss":2.1043,"lr":0.00018,"epoch":0.25}@@
+@@ICW {"type":"warning","message":"bitsandbytes indisponível; seguindo em bf16"}@@
+ 42%|████▏     | 5/12 [00:12<00:16]
+{"loss": 1.7321, "learning_rate": 0.00012, "epoch": 1.0}
+@@ICW {"type":"step","step":5,"loss":1.7321,"lr":0.00012,"epoch":1.0}@@
+@@ICW {"type":"step","step":5,"loss":1.7300,"lr":0.00012,"epoch":1.0}@@
+linha qualquer do trainer @@ICW {json quebrado@@
+{"train_runtime": 41.2, "train_loss": 1.4123}
+@@ICW {"type":"done","train_loss":1.4123}@@
+@@ICW {"type":"saved","adapter":"/workspace/out/adapter"}@@
