@@ -2,6 +2,7 @@
 import {
   Activity,
   Boxes,
+  Brain,
   ChevronLeft,
   Coins,
   Cpu,
@@ -25,6 +26,7 @@ const SERVER_MANAGEMENT_LINKS = [
   { href: "/", label: "Visão geral", icon: Gauge },
   { href: "/spark", label: "Spark", icon: Cpu },
   { href: "/models", label: "Modelos", icon: Network },
+  { href: "/treinar", label: "Treinar", icon: Brain },
   { href: "/bench", label: "Benchmarks", icon: FlaskConical },
   { href: "/bancada", label: "Bancada do Spark", icon: Layers },
   { href: "/terminal", label: "Shell ao Vivo", icon: Terminal },

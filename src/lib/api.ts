@@ -20,6 +20,14 @@ export async function send<T>(url: string, method: "POST" | "PUT" | "PATCH" | "D
   return data as T;
 }
 
+/** Envio multipart (uploads): mesma proteção x-icewall das mutações JSON. */
+export async function sendForm<T>(url: string, form: FormData): Promise<T> {
+  const res = await fetch(url, { method: "POST", headers: { "x-icewall": "1" }, body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+  return data as T;
+}
+
 /** Consulta com polling (padrão 5 s). */
 export function useLive<T>(url: string, intervalMs = 5000, opts?: Partial<UseQueryOptions<T>>) {
   return useQuery<T>({ queryKey: [url], queryFn: () => getJson<T>(url), refetchInterval: intervalMs, ...opts });

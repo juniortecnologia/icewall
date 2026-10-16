@@ -1,7 +1,7 @@
 # Fase 2 — Aba `/treinar`: treino, quantização e fine-tuning (Lab → Produção)
 
 **Data:** 2026-10-15
-**Status:** em execução (T0 iniciada)
+**Status:** em execução (T0 e T1 concluídas)
 **Substitui/absorve:** `docs/train/plans/02..05` (convenções desatualizadas) e detalha a Fase 2 de `docs/plano-multi-servidor-treino-vllm.md`
 
 ---
@@ -67,10 +67,12 @@ Fluxo em stepper (5 passos já previstos nos docs + 6º de export/promoção):
 - Scheduler: job `train` (espelha `processBenchQueue`) + `recoverStaleTrain()`.
 - ✅ **Validação:** typecheck/lint/vitest; GET lista runs; fila marca jobs com falha clara até o runner real (T2).
 
-### T1 — Datasets
-- `POST /api/train/datasets` (FormData → tmp local → `driver.put()` para `/mnt/data/datasets/`), conversores (JSONL chat/CSV/TXT), validação (vazios, duplicados, contagem), `GET /api/train/datasets/:nome/preview` (10 amostras via driver).
-- UI de datasets (upload drag-and-drop, amostragem).
-- ✅ **Validação:** dataset sobe, valida e pré-visualiza.
+### T1 — Datasets ✅
+- `POST /api/train/datasets` (multipart): conversão para JSONL (chat/text; reconhece messages, Alpaca, prompt/completion, user/assistant, CSV por cabeçalho, TXT), validação (total/duplicados/vazios) e envio pelo driver (`driverFor` + `put`) para `/mnt/data/datasets/{slug}.jsonl`.
+- `GET /api/train/datasets` (lista por servidor), `GET/DELETE :id` (remoção bloqueia job na fila/execução), `GET :id/preview` (primeiras N amostras via `head`).
+- UI: aba `/treinar` no nav — seletor de servidor do registro, upload drag-and-drop, tabela de datasets, preview e remoção.
+- Correção herdada do legado descoberta pelos testes: `shellArg` recusa caminhos absolutos — criado `shellPath` em `spark/ssh.ts` para caminhos.
+- ✅ **Validação:** 383/383 testes (32 arquivos), typecheck limpo, lint sem erros novos.
 
 ### T2 — Runner real + monitoramento (núcleo MVP)
 - **Antes de codar:** mini-run manual no Spark para validar imagem/args reais (mandato do plano aprovado). O `fine_tune.py` passa a ser **nosso**, versionado em `deploy/train/` e montado no container — sem depender de script inexistente na imagem.

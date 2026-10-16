@@ -449,7 +449,7 @@ export const trainDatasets = sqliteTable(
     ts: integer("ts").notNull().default(now),
     serverId: integer("server_id").notNull(),
     nome: text("nome").notNull(),
-    formato: text("formato", { enum: ["jsonl", "csv", "txt"] }).notNull(),
+    formato: text("formato", { enum: ["jsonl", "json", "csv", "txt"] }).notNull(),
     /** Conversão aplicada para o treino (chat = pares instrução/resposta; text = cru). */
     formatoTreino: text("formato_treino", { enum: ["chat", "text"] }).notNull().default("chat"),
     remotePath: text("remote_path").notNull(),

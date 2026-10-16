@@ -1,6 +1,6 @@
 import "server-only";
 import { eq } from "drizzle-orm";
-import { createDriver, type ExecResult } from "@/lib/servers/server-driver";
+import { createDriver, type ExecResult, type ServerDriver } from "@/lib/servers/server-driver";
 import "@/lib/servers/drivers"; // registra as fábricas "local" e "ssh"
 import { getDb } from "./db/client";
 import { servers } from "./db/schema";
@@ -44,6 +44,31 @@ export function primaryServer(): ServerRef | null {
 
 export function primaryServerId(): number | null {
   return primaryServer()?.id ?? null;
+}
+
+/**
+ * Driver do servidor pelo id do registro — para operações de arquivo
+ * (put/get/ls/mkdir), que o `execOnServer` não cobre. A resolução espelha a
+ * do `execOnServer` (local ignora host/usuario/chave; SSH exige os três).
+ */
+export function driverFor(serverId: number): ServerDriver {
+  const row = getDb().select().from(servers).where(eq(servers.id, serverId)).limit(1).get();
+  if (!row) {
+    throw new Error(`servidor inexistente no registro: id ${serverId} (cadastre em /servers)`);
+  }
+  if (row.tipo === "local") {
+    return createDriver("local", { host: row.host || "localhost", user: "", keyPath: "" });
+  }
+  if (row.tipo === "ssh") {
+    if (!row.host || !row.usuario || !row.chaveSshPath) {
+      const faltando = [!row.host ? "host" : null, !row.usuario ? "usuario" : null, !row.chaveSshPath ? "chaveSshPath" : null]
+        .filter(Boolean)
+        .join(", ");
+      throw new Error(`servidor "${row.nome}" (id ${row.id}) indisponível: campos SSH incompletos (${faltando})`);
+    }
+    return createDriver("ssh", { host: row.host, port: row.porta ?? undefined, user: row.usuario, keyPath: row.chaveSshPath });
+  }
+  throw new Error(`servidor "${row.nome}" (id ${row.id}) tem tipo desconhecido: ${String(row.tipo)}`);
 }
 
 /** Marca de falha do executor: code -1 + mensagem clara no stderr. */

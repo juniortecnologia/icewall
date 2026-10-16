@@ -38,6 +38,19 @@ export function shellArg(value: string): string {
   return `'${value}'`;
 }
 
+const SAFE_PATH = /^\/[A-Za-z0-9_.@/-]{0,199}$/;
+
+/**
+ * Aceita só caminhos absolutos simples (sem espaço, $, aspas, ;, |, `) e
+ * devolve entre aspas simples. O `shellArg` acima recusa caminhos por
+ * exigir primeiro caractere alfanumérico — herança da era de nomes de
+ * modelo/container.
+ */
+export function shellPath(value: string): string {
+  if (!SAFE_PATH.test(value)) throw new Error(`caminho recusado: ${JSON.stringify(value)}`);
+  return `'${value}'`;
+}
+
 /**
  * Tenta entrar em um host sem chave e sem conexão compartilhada para ver
  * quais métodos o sshd oferece (Etapa 03: host vem do registro, não de
