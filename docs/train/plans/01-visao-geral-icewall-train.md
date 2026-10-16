@@ -1,5 +1,7 @@
 # /treinar — Visão Geral do Plano
 
+> **⚠ Superado pelo plano da Fase 2:** [2026-10-15-fase2-treinar-lab-producao.md](2026-10-15-fase2-treinar-lab-producao.md) — porta correta 4310 (não 4000), pilha multi-servidor atual, `withAuth` nas rotas. Mantido como contexto histórico.
+
 **Status:** planejamento completo  
 **Data:** 2026-10-13  
 **Inspiração:** Unsloth Studio (infra de treinamento) mas UI própria Icewall  

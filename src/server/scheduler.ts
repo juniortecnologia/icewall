@@ -6,6 +6,7 @@ import { ingestClaudeUsage } from "./ingest/claude-usage";
 import { ingestDelegateRuns } from "./ingest/delegate-runs";
 import { runAuditor } from "./jev/auditor";
 import { rebuildRecommendations } from "./jev/recommend";
+import { processTrainQueue, recoverStaleTrain } from "./train/runner";
 import { collectDocker } from "./spark/collectors/docker";
 import { collectHealth } from "./spark/collectors/health";
 import { collectOllama } from "./spark/collectors/ollama";
@@ -67,6 +68,7 @@ const JOBS: { name: string; label: string; intervalMs: number; fn: () => Promise
   { name: "claude", label: "Tokens do Claude (transcripts)", intervalMs: 5 * M, fn: ingestClaudeUsage },
   { name: "auditor", label: "Auditor Jev + recomendações", intervalMs: 5 * M, fn: audit },
   { name: "bench", label: "Fila de benchmarks", intervalMs: 5 * S, fn: processBenchQueue },
+  { name: "train", label: "Fila de treinos", intervalMs: 5 * S, fn: processTrainQueue },
   { name: "retention", label: "Retenção de métricas", intervalMs: 1 * H, fn: retention },
 ];
 
@@ -108,6 +110,7 @@ export function startScheduler(): void {
     JOBS.map((j) => [j.name, { name: j.name, label: j.label, intervalMs: j.intervalMs, lastRun: null, lastMs: null, lastError: null, running: false }]),
   );
   recoverStaleBench();
+  recoverStaleTrain();
   for (const j of JOBS) setInterval(() => void runJob(j.name), j.intervalMs).unref();
   void (async () => {
     // health e security leem os snapshots de ollama e docker: esses dois primeiro, o resto em paralelo, o auditor por último.

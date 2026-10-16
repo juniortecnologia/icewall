@@ -384,44 +384,103 @@ export const servers = sqliteTable(
   },
 );
 
-// Fine-tune: treinos Unsloth rodando no Spark (GPU)
+// ---------------------------------------------------------------------------------------------
+// Treino `/treinar` (Fase 2 — docs/train/plans/2026-10-15-fase2-treinar-lab-producao.md).
+// Substitui as tabelas legadas do fine-tune (migração 0006), que nunca tiveram leitura.
+// `serverId` aponta para o registro `servers`: treino multi-servidor desde o início.
 
-export const fineTuneRuns = sqliteTable(
-  "fine_tune_runs",
+/** Hiperparâmetros do job (JSON em `params_json`). Defaults = presets recomendados do Unsloth. */
+export interface TrainJobParams {
+  learningRate: number;
+  epochs: number;
+  r: number; // LoRA rank
+  alpha: number; // LoRA alpha
+  dropout: number;
+  batchSize: number;
+  gradientAccumulationSteps: number;
+  maxSeqLength: number;
+  maxSamples?: number;
+  bf16: boolean;
+  /** Quantização do export GGUF (T3): q4_k_m | q8_0 | f16… */
+  quantExport?: string;
+}
+
+/** Um job de treino (LoRA/QLoRA/full) em um servidor do registro. */
+export const trainJobs = sqliteTable(
+  "train_jobs",
   {
-    runId: text("run_id").primaryKey(),
+    id: integer("id").primaryKey({ autoIncrement: true }),
     ts: integer("ts").notNull().default(now),
+    serverId: integer("server_id").notNull(),
+    /** lab = experimento; producao = candidato a promoção para o serving (T4). */
+    ambiente: text("ambiente", { enum: ["lab", "producao"] }).notNull().default("lab"),
     baseModel: text("base_model").notNull(),
     method: text("method", { enum: ["lora", "qlora", "full"] }).notNull(),
+    /** Dataset registrado (`train_datasets`) OU caminho já existente no servidor. */
+    datasetId: integer("dataset_id"),
     datasetPath: text("dataset_path"),
-    paramsJson: text("params_json"), // JSON de hiperparâmetros (rank, alpha…)
-    status: text("status", { enum: ["pending", "queued", "training", "exporting", "deploying", "completed", "failed"] }).notNull().default("pending"),
-    lossHistory: text("loss_history", { mode: "json" }).$type<{ step: number; value: number }[]>(),
-    valLoss: real("val_loss"),
+    paramsJson: text("params_json", { mode: "json" }).$type<TrainJobParams | null>(),
+    status: text("status", { enum: ["queued", "running", "done", "failed", "cancelled"] }).notNull().default("queued"),
     progressPct: integer("progress_pct").notNull().default(0),
     epochsDone: integer("epochs_done").notNull().default(0),
     totalEpochs: integer("total_epochs").notNull().default(0),
-    sparkPath: text("spark_path"), // /tmp/icewall-ft-{runId} no Spark
+    lossHistory: text("loss_history", { mode: "json" }).$type<{ step: number; value: number }[]>(),
+    valLoss: real("val_loss"),
+    /** Etapa atual (o `current` da fila de bench). */
+    current: text("current"),
+    error: text("error"),
+    /** Workspace no servidor (/tmp/icewall-train-{id}) e pid do processo remoto (T2). */
+    workspacePath: text("workspace_path"),
+    remotePid: integer("remote_pid"),
     gpuMemUsedMib: real("gpu_mem_used_mib"),
     gpuMemTotalMib: real("gpu_mem_total_mib"),
-    createdById: text("created_by_id"),
-    updatedAt: integer("updated_at").notNull().default(now),
+    startedAt: integer("started_at"),
+    finishedAt: integer("finished_at"),
+    updatedTs: integer("updated_ts").notNull().default(now),
   },
-  (t) => [index("ft_status").on(t.status), index("ft_ts").on(t.ts)],
+  (t) => [index("train_jobs_status").on(t.status), index("train_jobs_ts").on(t.ts)],
 );
 
-export const fineTuneExports = sqliteTable(
-  "fine_tune_exports",
+/** Dataset cadastrado para treino; o upload/conversão (T1) grava o caminho remoto. */
+export const trainDatasets = sqliteTable(
+  "train_datasets",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    runId: text("run_id").notNull(),
-    outputName: text("output_name"), // tag da variante no Ollama (ex.: qwen3.6-finetuned-v1)
-    exportPath: text("export_path"), // caminho do GGUF no Spark
+    ts: integer("ts").notNull().default(now),
+    serverId: integer("server_id").notNull(),
+    nome: text("nome").notNull(),
+    formato: text("formato", { enum: ["jsonl", "csv", "txt"] }).notNull(),
+    /** Conversão aplicada para o treino (chat = pares instrução/resposta; text = cru). */
+    formatoTreino: text("formato_treino", { enum: ["chat", "text"] }).notNull().default("chat"),
+    remotePath: text("remote_path").notNull(),
     sizeBytes: integer("size_bytes"),
-    adapterPath: text("adapter_path"),
-    created_at: integer("created_at").notNull().default(now),
+    samples: integer("samples"),
+    /** Resultado da validação (duplicados, vazios), quando rodada. */
+    validacao: text("validacao", { mode: "json" }).$type<{ total?: number; duplicados?: number; vazios?: number } | null>(),
+    atualizadoEm: integer("atualizado_em").notNull().default(now),
   },
-  (t) => [index("ft_exports_run").on(t.runId)],
+  (t) => [uniqueIndex("train_datasets_server_nome").on(t.serverId, t.nome)],
+);
+
+/** Artefato exportado de um job (GGUF quantizado, adapter LoRA, checkpoint, merged). */
+export const trainArtifacts = sqliteTable(
+  "train_artifacts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    ts: integer("ts").notNull().default(now),
+    jobId: integer("job_id"),
+    serverId: integer("server_id").notNull(),
+    kind: text("kind", { enum: ["gguf", "adapter", "checkpoint", "merged"] }).notNull(),
+    /** Quantização (q4_k_m, q8_0, f16…) quando kind = gguf. */
+    quant: text("quant"),
+    remotePath: text("remote_path").notNull(),
+    sizeBytes: integer("size_bytes"),
+    /** Promovido ao serving: variante Ollama ou adapter no vLLM (T4). */
+    promovido: integer("promovido", { mode: "boolean" }).notNull().default(false),
+    promoDestino: text("promo_destino"),
+    atualizadoEm: integer("atualizado_em").notNull().default(now),
+  },
+  (t) => [index("train_artifacts_job").on(t.jobId)],
 );
 
 

@@ -1,5 +1,7 @@
 # Fase 1A: Modelos + Datasets
 
+> **⚠ Superado pelo plano da Fase 2:** [2026-10-15-fase2-treinar-lab-producao.md](2026-10-15-fase2-treinar-lab-producao.md) — os datasets agora vivem em `train_datasets` + `/api/train/datasets` (Etapa T1). Mantido como contexto histórico.
+
 **Status:** planejamento  
 **Arquivos criados:** 
 - `tests/drivers-server.test.ts` — teste da interface genérica ServerDriver  

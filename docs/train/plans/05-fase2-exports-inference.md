@@ -1,5 +1,7 @@
 # Fase 2: Exports, LoRA Merge e Inference Integrada
 
+> **⚠ Superado pelo plano da Fase 2:** [2026-10-15-fase2-treinar-lab-producao.md](2026-10-15-fase2-treinar-lab-producao.md) — quantização/exports são a Etapa T3 (GGUF via Unsloth ou llama.cpp) e a promoção ao serving é a T4. Mantido como contexto histórico.
+
 **Status:** planejamento  
 **Depende de:** Fases 0 + 1A + 1B completas  
 

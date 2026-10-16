@@ -1,5 +1,7 @@
 # Fase 0: Infra Multi-Servidor + CRUD de Servidores
 
+> **⚠ Superado pelo plano da Fase 2:** [2026-10-15-fase2-treinar-lab-producao.md](2026-10-15-fase2-treinar-lab-producao.md) — a infra desta fase já foi implementada (registro `servers`, drivers, executor). Mantido como contexto histórico.
+
 **Status:** para implementar primeiro  
 **Arquivos criados nesta sessão anterior**:  
 - `driven-server-driver.test.ts` — teste da interface genérica ServerDriver  

@@ -1,5 +1,7 @@
 # Fase 1B: Jobs de Treinamento + Monitoramento ao Vivo
 
+> **⚠ Superado pelo plano da Fase 2:** [2026-10-15-fase2-treinar-lab-producao.md](2026-10-15-fase2-treinar-lab-producao.md) — jobs vivem em `train_jobs` + `/api/train/jobs` (T0) e o monitoramento real via SSE é a T2. Mantido como contexto histórico.
+
 **Status:** planejamento  
 **Prioridade:** MVP — esta é a parte mais importante do pipeline!
 
