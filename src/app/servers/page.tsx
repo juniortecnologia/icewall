@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   Box,
+  ChevronRight,
   Cpu,
   Edit3,
   HardDrive,
@@ -21,6 +22,7 @@ import {
 import type { serverMonitor } from "@/server/queries";
 import { useAction, useLive } from "@/lib/api";
 import { ago, bytes, num, stateLabel } from "@/lib/format";
+import { useServer } from "@/components/server-context";
 import {
   ActionButton,
   Button,
@@ -73,6 +75,7 @@ function tipoLabel(tipo: "local" | "ssh"): string {
 function ServerCard({ entry }: { entry: ServerEntry }) {
   const router = useRouter();
   const logs = useAction();
+  const { setActiveServer } = useServer();
   const [logsOf, setLogsOf] = useState<string | null>(null);
   const { server } = entry;
   const h = entry.health?.data;
@@ -82,6 +85,21 @@ function ServerCard({ entry }: { entry: ServerEntry }) {
   const os = entry.os?.data;
   const status = cardStatus(entry);
   const running = (d?.containers ?? []).filter((c) => c.state === "running").length;
+
+  /** Liga este servidor do registro à sidebar (o mesmo formato do contexto). */
+  const selecionar = () => {
+    setActiveServer({
+      id: String(server.id),
+      name: server.nome,
+      type: server.tipo,
+      endpoint: server.tipo === "ssh" ? `ssh://${server.usuario ?? ""}@${server.host}:${server.porta ?? 22}` : "localhost",
+      sshHost: server.tipo === "ssh" ? server.host : undefined,
+      sshPort: server.tipo === "ssh" ? server.porta ?? undefined : undefined,
+      sshUser: server.usuario ?? undefined,
+      status: status.label,
+    });
+    router.push("/");
+  };
 
   return (
     <Panel
@@ -277,9 +295,12 @@ function ServerCard({ entry }: { entry: ServerEntry }) {
         </div>
       )}
 
-      {/* Rodapé: terminal no servidor */}
+      {/* Rodapé: seleção e terminal no servidor */}
       <div className="mt-4 flex items-center gap-2 border-t border-line-soft pt-3">
-        <Button tone="primary" onClick={() => router.push(`/terminal?serverId=${server.id}`)}>
+        <Button tone="primary" onClick={selecionar}>
+          <ChevronRight size={13} aria-hidden /> Selecionar servidor
+        </Button>
+        <Button onClick={() => router.push(`/terminal?serverId=${server.id}`)}>
           <Terminal size={13} className="text-emerald-400" aria-hidden /> Terminal neste servidor
         </Button>
       </div>
