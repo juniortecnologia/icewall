@@ -475,6 +475,9 @@ export const trainArtifacts = sqliteTable(
     quant: text("quant"),
     remotePath: text("remote_path").notNull(),
     sizeBytes: integer("size_bytes"),
+    /** Ciclo de vida do export (kind = gguf): pending → running → done|failed. */
+    status: text("status", { enum: ["pending", "running", "done", "failed"] }).notNull().default("pending"),
+    error: text("error"),
     /** Promovido ao serving: variante Ollama ou adapter no vLLM (T4). */
     promovido: integer("promovido", { mode: "boolean" }).notNull().default(false),
     promoDestino: text("promo_destino"),
@@ -482,5 +485,8 @@ export const trainArtifacts = sqliteTable(
   },
   (t) => [index("train_artifacts_job").on(t.jobId)],
 );
+
+/** Ciclo de vida do export GGUF. */
+export type ArtifactStatus = "pending" | "running" | "done" | "failed";
 
 

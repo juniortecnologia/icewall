@@ -1,7 +1,7 @@
 # Fase 2 — Aba `/treinar`: treino, quantização e fine-tuning (Lab → Produção)
 
 **Data:** 2026-10-15
-**Status:** em execução (T0, T1 e T2 concluídas)
+**Status:** em execução (T0, T1 e T2 concluídas; T3 com código pronto, E2E pendente)
 **Substitui/absorve:** `docs/train/plans/02..05` (convenções desatualizadas) e detalha a Fase 2 de `docs/plano-multi-servidor-treino-vllm.md`
 
 ---
@@ -83,11 +83,16 @@ Fluxo em stepper (5 passos já previstos nos docs + 6º de export/promoção):
 - **Bugs latentes pegos pelo E2E:** `SshDriver.put/get` usava flags de ssh no scp (`-p`/`-l`) e faltava `user@` no destino (nunca exercitado — o bench usa ssh puro); aspas no destino viram literais no scp/SFTP moderno; `/mnt/data` root-only no Spark → datasets em `$HOME/icewall/datasets`; tqdm cola o marcador sem `\n` → parser com match global; scheduler não recebe hot-reload (reinício a cada mudança — já avisado no README).
 - ✅ **Validação (E2E real no Spark):** mini-run manual OK; job via fila → `done` com loss final 4,38; segundo job com **loss ao vivo acumulando entre polls** (4 pontos: 4,19→4,15); **stop ao vivo** aos 41% → `cancelled`, container removido, campos limpos. 392/392 testes.
 
-### T3 — Quantização e exports (treinar → quantificar)
-- Caminho 1 (no fim do treino): `save_pretrained_gguf` (q4_k_m/q8_0/f16) via Unsloth.
-- Caminho 2 (pós-treino, qualquer checkpoint): container llama.cpp (`convert_hf_to_gguf.py` + `llama-quantize`, opcional imatrix com dataset de calibração).
-- Tabela `train_artifacts` + UI (lista, tamanho, download via `driver.get()`).
-- ✅ **Validação:** GGUF q4_k_m gerado e baixado para a Station.
+### T3 — Quantização e exports (código ✅; E2E no Spark pendente — host pausado pelo usuário)
+- **Realidade da stack:** sem Unsloth (imagem negada no hub), o caminho é **llama.cpp** (previsto como caminho 2 no plano): merge do adapter no base (`deploy/train/merge_lora.py`, peft merge_and_unload) → `convert_hf_to_gguf.py` (f16/q8_0) → `llama-quantize` (q4_k_m).
+- **Imagem `icewall-quant:latest`** já construída no Spark (icewall-train + gguf + llama.cpp CPU com llama-quantize) — construída antes da pausa.
+- **Fila de exports** (`src/server/train/export.ts`, job `train-export` no scheduler): mesmo padrão da fila de treinos — artifact nasce 'pending' com caminho final esperado, tick de 5 s inicia (nohup + container `icewall-export-{id}`, sem lock — é CPU) e polla (final.status + stat do GGUF). Sem lock do delegate-local por ser CPU/disk-bound.
+- **Migração 0013**: `train_artifacts.status` (pending→running→done|failed) + `error`.
+- **Rotas**: `POST /api/train/jobs/:id/export` (valida job done + um export ativo por job+quant), `GET /api/train/artifacts` (filtros serverId/jobId), `GET :id/download` (driver.get → stream com content-disposition; tmp limpo no close) e `DELETE :id` (rm -rf remoto; 409 se pending/running).
+- **Runner**: treino concluído registra o adapter como artifact (kind adapter, status done) — base para a promoção da T4.
+- **UI /treinar**: export f16/q8_0/q4_k_m no detalhe de jobs done + tabela de artifacts com download e remoção.
+- **Achado de infra:** o `systemd-tmpfiles-clean` do Spark limpa `/tmp` (workspaces de treino sumiram) → **workspaces movidos para `$HOME/icewall/workspaces/train-{id}`** (mesma proteção de datasets e hf-cache).
+- ⏳ **Validação E2E pendente:** GGUF q4_k_m de um treino real gerado e baixado para a Station (aguardando o Spark ser liberado).
 
 ### T4 — Lab → Produção (promover)
 - Promover artifact → variante Ollama (com vínculo de origem, como as variantes existentes) **ou** adapter no vLLM (`--enable-lora --lora-modules`, chave do registro).

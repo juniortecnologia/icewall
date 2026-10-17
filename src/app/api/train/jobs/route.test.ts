@@ -46,7 +46,7 @@ vi.mock("@/server/executor", async (importOriginal) => {
 import { driverFor, execOnServer } from "@/server/executor";
 import type { ServerDriver } from "@/lib/servers/server-driver";
 import type { ExecResult } from "@/lib/servers/server-driver";
-import { servers, trainDatasets, trainJobs } from "@/server/db/schema";
+import { servers, trainArtifacts, trainDatasets, trainJobs } from "@/server/db/schema";
 import { processTrainQueue, recoverStaleTrain } from "@/server/train/runner";
 import { GET as listGet, POST } from "./route";
 import { GET as detailGet } from "./[id]/route";
@@ -335,10 +335,10 @@ describe("fila de treinos (runner real, executor mockado)", () => {
     await processTrainQueue();
 
     const row = getDb().select().from(trainJobs).where(eq(trainJobs.id, id)).get()!;
-    expect(row.status).toBe("running");
-    expect(row.workspacePath).toBe(`/tmp/icewall-train-${id}`);
+    expect(row.status, `erro do job: ${row.error ?? "—"}`).toBe("running");
+    expect(row.workspacePath).toBe(`/home/facini/icewall/workspaces/train-${id}`);
     expect(row.remotePid).toBe(12345);
-    expect(driverFalso.mkdir).toHaveBeenCalledWith(`/tmp/icewall-train-${id}`, "755");
+    expect(driverFalso.mkdir).toHaveBeenCalledWith(`/home/facini/icewall/workspaces/train-${id}`, "755");
     expect(driverFalso.put).toHaveBeenCalledTimes(2); // fine_tune.py + run.sh
     const remotos = driverFalso.put.mock.calls.map((c) => String(c[1]));
     expect(remotos.some((r) => r.endsWith("fine_tune.py"))).toBe(true);
@@ -374,6 +374,12 @@ describe("fila de treinos (runner real, executor mockado)", () => {
     expect(row.valLoss).toBe(1.4123);
     expect(row.lossHistory).toContainEqual({ step: 12, value: 1.23 });
     expect(row.current).toBe("concluído");
+    // Treino concluído registra o adapter como artifact (T4 o promove).
+    const adapter = getDb().select().from(trainArtifacts).where(eq(trainArtifacts.jobId, id)).all();
+    expect(adapter).toHaveLength(1);
+    expect(adapter[0].kind).toBe("adapter");
+    expect(adapter[0].status).toBe("done");
+    expect(adapter[0].remotePath).toBe(`${row.workspacePath}/out/adapter`);
   });
 
   it("poll com exit!=0 e marcador de erro: failed com a mensagem clara", async () => {

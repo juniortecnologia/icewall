@@ -10,6 +10,7 @@ import { parseSections } from "../parsers";
 import { driverFor, execOnServer } from "../executor";
 import { shellArg, shellPath } from "../spark/ssh";
 import { fundirLossHistory, parseTrainLog, type TrainMarker } from "./parse-log";
+import { homeServidor } from "./datasets";
 
 /**
  * Runner de treinos (Fase 2, Etapa T2) — espelha a fila de benchmarks, mas
@@ -48,7 +49,7 @@ function jobPorId(id: number): TrainJob | undefined {
   return getDb().select().from(schema.trainJobs).where(eq(schema.trainJobs.id, id)).limit(1).get();
 }
 
-const workspaceDe = (id: number) => `/tmp/icewall-train-${id}`;
+const workspaceDe = (home: string, id: number) => `${home}/icewall/workspaces/train-${id}`;
 const containerDe = (id: number) => `icewall-train-${id}`;
 
 // ── lock do delegate-local (não-bloqueante; segura enquanto o treino roda) ──
@@ -139,13 +140,15 @@ async function iniciarJob(job: TrainJob): Promise<void> {
   g.__icewallTrainLock = holder;
   g.__icewallTrainLockAviso = false;
 
-  const ws = workspaceDe(job.id);
+  // Workspaces vivem em $HOME (o /tmp deste host é limpo agressivamente pelo
+  // systemd-tmpfiles — perdeu adapters em produção de teste).
+  const home = await homeServidor(job.serverId);
+  const ws = workspaceDe(home, job.id);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "icewall-trainprep-"));
   let driver: ReturnType<typeof driverFor> | null = null;
   try {
     const datasetDir = job.datasetPath?.split("/").slice(0, -1).join("/") ?? "";
-    const homeDir = datasetDir.split("/").slice(0, -2).join("/") || "/root";
-    const hfCache = `${homeDir}/icewall/hf-cache`;
+    const hfCache = `${home}/icewall/hf-cache`;
     const runSh = [
       `docker rm -f ${shellArg(containerDe(job.id))} >/dev/null 2>&1 || true`,
       `docker run --rm --name ${shellArg(containerDe(job.id))} --gpus all \\`,
@@ -164,10 +167,9 @@ async function iniciarJob(job: TrainJob): Promise<void> {
 
     driver = driverFor(job.serverId);
     await driver.mkdir(ws, "755");
-    await driver.mkdir(`${homeDir}/icewall/hf-cache`, "755");
+    await driver.mkdir(`${home}/icewall/hf-cache`, "755");
     await driver.put(tmpPy, `${ws}/fine_tune.py`);
-    await driver.put(tmpSh, `${ws}/run.sh`);
-  } catch (err) {
+    await driver.put(tmpSh, `${ws}/run.sh`);  } catch (err) {
     soltarLock();
     progress(job.id, {
       status: "failed",
@@ -288,6 +290,19 @@ async function pollJob(job: TrainJob): Promise<void> {
         current: "concluído",
         finishedAt: Date.now(),
       });
+      // Adapter materializado vira artifact (T4 o promove ao serving).
+      const adapterJa = getDb()
+        .select({ id: schema.trainArtifacts.id })
+        .from(schema.trainArtifacts)
+        .where(and(eq(schema.trainArtifacts.jobId, atual.id), eq(schema.trainArtifacts.kind, "adapter")))
+        .limit(1)
+        .get();
+      if (!adapterJa && ws) {
+        getDb()
+          .insert(schema.trainArtifacts)
+          .values({ jobId: atual.id, serverId: atual.serverId, kind: "adapter", remotePath: `${ws}/out/adapter`, status: "done" })
+          .run();
+      }
       addEvent("train", "info", `Treino #${atual.id} concluído`, { lossFinal: doneMarker?.train_loss ?? null }, atual.serverId);
     } else {
       progress(atual.id, {

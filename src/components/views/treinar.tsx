@@ -8,6 +8,7 @@ import { Button, Code, Empty, ErrorNote, Kv, Loading, Meter, PageHeader, Panel, 
 import type { SafeServer } from "@/app/api/train/servers/schemas";
 import type { SafeTrainDataset } from "@/app/api/train/datasets/schemas";
 import type { SafeTrainJob } from "@/app/api/train/jobs/schemas";
+import type { SafeTrainArtifact } from "@/app/api/train/artifacts/schemas";
 
 interface UploadOk {
   ok: true;
@@ -48,6 +49,10 @@ export function TrainView() {
   );
   const jobs = useLive<{ ok: boolean; jobs: SafeTrainJob[] }>(
     atual ? `/api/train/jobs?serverId=${atual}` : "/api/train/jobs",
+    5000,
+  );
+  const artifacts = useLive<{ ok: boolean; artifacts: SafeTrainArtifact[] }>(
+    atual ? `/api/train/artifacts?serverId=${atual}` : "/api/train/artifacts",
     5000,
   );
 
@@ -178,6 +183,57 @@ export function TrainView() {
     }
   }
 
+  // ── exports GGUF (T3) ───────────────────────────────────────────────────
+  const [quantExport, setQuantExport] = useState<"f16" | "q8_0" | "q4_k_m">("q4_k_m");
+  const [exportando, setExportando] = useState(false);
+  const [erroExport, setErroExport] = useState<string | null>(null);
+
+  async function exportarJob(j: SafeTrainJob) {
+    setExportando(true);
+    setErroExport(null);
+    try {
+      await send(`/api/train/jobs/${j.id}/export`, "POST", { quant: quantExport });
+      void qc.invalidateQueries();
+    } catch (e) {
+      setErroExport(String((e as Error).message));
+    } finally {
+      setExportando(false);
+    }
+  }
+
+  async function baixarArtifact(a: SafeTrainArtifact) {
+    setErroExport(null);
+    try {
+      // Download via fetch autenticado + blob (o link direto não levaria cookies/sessão).
+      const res = await fetch(`/api/train/artifacts/${a.id}/download`, { cache: "no-store" });
+      if (!res.ok) {
+        const dados = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(dados.error ?? `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = res.headers.get("content-disposition")?.match(/filename="(.+)"/)?.[1] ?? `artifact-${a.id}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErroExport(String((e as Error).message));
+    }
+  }
+
+  async function excluirArtifact(a: SafeTrainArtifact) {
+    if (!window.confirm(`Remover o artifact "${a.quant ?? a.kind}" e o arquivo remoto?`)) return;
+    setErroExport(null);
+    try {
+      await send(`/api/train/artifacts/${a.id}`, "DELETE");
+      void qc.invalidateQueries();
+    } catch (e) {
+      setErroExport(String((e as Error).message));
+    }
+  }
+
+  const artifactsDoServidor = artifacts.data?.artifacts ?? [];
   const jobsDoServidor = jobs.data?.jobs ?? [];
   const jobAtivo = aoVivo?.job ?? jobsDoServidor.find((j) => j.id === jobSelecionado) ?? null;
   const statusLevel = (s: string): "good" | "info" | "critical" | "warning" =>
@@ -404,7 +460,68 @@ export function TrainView() {
             ) : (
               jobSelecionado !== null && <Loading label="Lendo train.log" />
             )}
+
+            {/* Exportar GGUF (T3) — só treinos concluídos */}
+            {jobAtivo.status === "done" && (
+              <div className="space-y-2 border-t border-line-soft pt-3">
+                <Segmented
+                  label="Exportar para GGUF"
+                  value={quantExport}
+                  onChange={setQuantExport}
+                  options={[
+                    { value: "q4_k_m", label: "q4_k_m (4-bit)" },
+                    { value: "q8_0", label: "q8_0 (8-bit)" },
+                    { value: "f16", label: "f16 (sem quant)" },
+                  ]}
+                />
+                <div className="flex items-center gap-2">
+                  <Button tone="primary" disabled={exportando} onClick={() => exportarJob(jobAtivo)}>
+                    {exportando ? "Enfileirando…" : `Exportar ${quantExport}`}
+                  </Button>
+                  <span className="text-[12px] text-ink-3">roda no icewall-quant (merge + convert + quantize) via fila própria</span>
+                </div>
+                {erroExport && <ErrorNote>{erroExport}</ErrorNote>}
+              </div>
+            )}
           </div>
+        )}
+      </Panel>
+
+      {/* Artefatos (adapters + exports GGUF) */}
+      <Panel title="Artefatos">
+        {artifacts.isLoading ? (
+          <Loading />
+        ) : artifactsDoServidor.length ? (
+          <Table head={["#", "Job", "Tipo", "Quant", "Status", "Tamanho", "Promovido", ""]}>
+            {artifactsDoServidor.map((a) => (
+              <tr key={a.id} className="border-t border-line-soft/60">
+                <td className="py-1.5 font-mono text-ink-2">#{a.id}</td>
+                <td className="py-1.5 text-ink-2">{a.jobId ? `#${a.jobId}` : "—"}</td>
+                <td className="py-1.5 font-medium text-ink">{a.kind}</td>
+                <td className="py-1.5 text-ink-2">{a.quant ?? "—"}</td>
+                <td className="py-1.5">
+                  <Status level={a.status === "done" ? "good" : a.status === "failed" ? "critical" : "info"} label={a.status} />
+                  {a.error && <div className="text-[11px] text-critical">{a.error}</div>}
+                </td>
+                <td className="py-1.5 text-ink-2">{a.kind === "adapter" ? "dir" : bytes(a.sizeBytes)}</td>
+                <td className="py-1.5 text-ink-3">{a.promovido ? (a.promoDestino ?? "sim") : "—"}</td>
+                <td className="py-1.5 text-right">
+                  <span className="inline-flex gap-1.5">
+                    {a.status === "done" && (
+                      <Button onClick={() => baixarArtifact(a)}>{a.kind === "gguf" ? "Baixar GGUF" : "Baixar"}</Button>
+                    )}
+                    {a.status !== "pending" && a.status !== "running" && (
+                      <Button tone="danger" onClick={() => excluirArtifact(a)}>
+                        Remover
+                      </Button>
+                    )}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        ) : (
+          <Empty>Nenhum artefato — treinos concluídos registram o adapter aqui, e exports GGUF aparecem nesta tabela.</Empty>
         )}
       </Panel>
 

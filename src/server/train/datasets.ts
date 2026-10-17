@@ -28,11 +28,10 @@ export const TAMANHO_MAX_BYTES = 50 * 1024 * 1024; // 50 MB por arquivo
 const homesCache = new Map<number, string>();
 
 /**
- * Diretório de datasets no servidor: `$HOME/icewall/datasets` — resolvido uma
- * vez por servidor e cacheado. (No Spark, `/mnt` é root-only: o legado
- * /mnt/data não é utilizável.)
+ * $HOME do servidor — resolvido uma vez por servidor e cacheado (o painel
+ * nunca assume o usuário do host remoto).
  */
-export async function datasetsDir(serverId: number): Promise<string> {
+export async function homeServidor(serverId: number): Promise<string> {
   const emCache = homesCache.get(serverId);
   if (emCache) return emCache;
   const res = await execOnServer(serverId, "echo $HOME", 10_000);
@@ -40,9 +39,14 @@ export async function datasetsDir(serverId: number): Promise<string> {
   if (res.code !== 0 || !home.startsWith("/")) {
     throw new DatasetError("remoto", `não consegui resolver $HOME no servidor: ${res.stderr.trim() || `exit ${res.code}`}`);
   }
-  const dir = `${home.replace(/\/+$/, "")}/icewall/datasets`;
-  homesCache.set(serverId, dir);
-  return dir;
+  const homeLimpo = home.replace(/\/+$/, "");
+  homesCache.set(serverId, homeLimpo);
+  return homeLimpo;
+}
+
+/** Diretório de datasets no servidor: `$HOME/icewall/datasets`. */
+export async function datasetsDir(serverId: number): Promise<string> {
+  return `${await homeServidor(serverId)}/icewall/datasets`;
 }
 
 /** Só para testes: limpa o cache de homes resolvidos. */

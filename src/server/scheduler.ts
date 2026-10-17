@@ -7,6 +7,7 @@ import { ingestDelegateRuns } from "./ingest/delegate-runs";
 import { runAuditor } from "./jev/auditor";
 import { rebuildRecommendations } from "./jev/recommend";
 import { processTrainQueue, recoverStaleTrain } from "./train/runner";
+import { processExportQueue, recoverStaleExports } from "./train/export";
 import { collectDocker } from "./spark/collectors/docker";
 import { collectHealth } from "./spark/collectors/health";
 import { collectOllama } from "./spark/collectors/ollama";
@@ -69,6 +70,7 @@ const JOBS: { name: string; label: string; intervalMs: number; fn: () => Promise
   { name: "auditor", label: "Auditor Jev + recomendações", intervalMs: 5 * M, fn: audit },
   { name: "bench", label: "Fila de benchmarks", intervalMs: 5 * S, fn: processBenchQueue },
   { name: "train", label: "Fila de treinos", intervalMs: 5 * S, fn: processTrainQueue },
+  { name: "train-export", label: "Fila de exports GGUF", intervalMs: 5 * S, fn: processExportQueue },
   { name: "retention", label: "Retenção de métricas", intervalMs: 1 * H, fn: retention },
 ];
 
@@ -111,6 +113,7 @@ export function startScheduler(): void {
   );
   recoverStaleBench();
   recoverStaleTrain();
+  recoverStaleExports();
   for (const j of JOBS) setInterval(() => void runJob(j.name), j.intervalMs).unref();
   void (async () => {
     // health e security leem os snapshots de ollama e docker: esses dois primeiro, o resto em paralelo, o auditor por último.
